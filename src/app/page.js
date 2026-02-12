@@ -204,24 +204,42 @@ export default function Home() {
 
                     {/* Select Clients (Multi) */}
                     <div style={{ flex: 2, minWidth: '300px' }}>
-                        <label style={{ display: 'block', marginBottom: '4px', fontSize: '0.9em' }}>
-                            Select Clients ({selectedPinClients.size})
-                            {pinAffiliateFilter && (
-                                <span
-                                    style={{ marginLeft: '8px', cursor: 'pointer', color: '#007bff', fontSize: '0.9em' }}
-                                    onClick={() => {
+                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                            <label style={{ fontSize: '0.9em', display: 'block' }}>
+                                Select Clients ({selectedPinClients.size})
+                            </label>
+                            <label style={{ fontSize: '0.9em', cursor: 'pointer', color: '#007bff', display: 'flex', alignItems: 'center' }}>
+                                <input
+                                    type="checkbox"
+                                    checked={(() => {
                                         const visibleClients = clients.filter(c => !pinAffiliateFilter || c.affiliate === pinAffiliateFilter);
-                                        if (selectedPinClients.size === visibleClients.length) {
-                                            setSelectedPinClients(new Set());
-                                        } else {
-                                            setSelectedPinClients(new Set(visibleClients.map(c => c.name)));
+                                        return visibleClients.length > 0 && visibleClients.every(c => selectedPinClients.has(c.name));
+                                    })()}
+                                    ref={el => {
+                                        if (el) {
+                                            const visibleClients = clients.filter(c => !pinAffiliateFilter || c.affiliate === pinAffiliateFilter);
+                                            const allSelected = visibleClients.length > 0 && visibleClients.every(c => selectedPinClients.has(c.name));
+                                            const someSelected = visibleClients.some(c => selectedPinClients.has(c.name));
+                                            el.indeterminate = someSelected && !allSelected;
                                         }
                                     }}
-                                >
-                                    (Toggle All)
-                                </span>
-                            )}
-                        </label>
+                                    onChange={() => {
+                                        const visibleClients = clients.filter(c => !pinAffiliateFilter || c.affiliate === pinAffiliateFilter);
+                                        const allSelected = visibleClients.length > 0 && visibleClients.every(c => selectedPinClients.has(c.name));
+
+                                        const newSet = new Set(selectedPinClients);
+                                        if (allSelected) {
+                                            visibleClients.forEach(c => newSet.delete(c.name));
+                                        } else {
+                                            visibleClients.forEach(c => newSet.add(c.name));
+                                        }
+                                        setSelectedPinClients(newSet);
+                                    }}
+                                    style={{ marginRight: '4px' }}
+                                />
+                                Select All
+                            </label>
+                        </div>
                         <div style={{
                             height: '150px',
                             overflowY: 'auto',
