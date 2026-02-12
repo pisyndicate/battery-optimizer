@@ -1,0 +1,570 @@
+
+// Pre-defined Locations
+export const INITIAL_LOCATIONS = [
+    { id: 'RE0305', name: 'Aurora', capacity: 5004 },
+    { id: 'RE0107', name: 'Hwy N', capacity: 4112 },
+    { id: 'RE0104', name: '76 Lawrence', capacity: 2056 },
+    { id: 'RE0202', name: 'Galena Barn', capacity: 2056 },
+    { id: 'RE0102', name: 'Hwy 96', capacity: 1029 },
+    { id: 'RE0105', name: 'North Dade', capacity: 1028 },
+    { id: 'RE0303', name: '0 Dade', capacity: 1028 },
+    { id: 'RE0304', name: 'South Grand', capacity: 951 },
+    { id: 'RE0401', name: '600 Campbell', capacity: 805 },
+    { id: 'RE0101', name: 'Hwy V', capacity: 288 },
+    { id: 'RE0106', name: '69 Lawrence', capacity: 144 },
+    { id: 'RE0201', name: 'Galena House', capacity: 88 },
+    { id: 'RE0301', name: '600 N Main', capacity: 68 },
+    { id: 'RE0302', name: '412 N Main', capacity: 24 },
+];
+
+const RAW_CLIENT_DATA = `Derek Crain - 2025 - 107 Units - 547.84 kWh	96	Brown and Sterling
+Bryan VanMeveren - 2025 - 57 Units - 291.84 kWh	51	Brown and Sterling
+Hector Quiroga - 2025 - 55 Units - 281.6 kWh	50	Brown and Sterling
+Carl Soloman and Takisha Solomon - 2025 - 50 Units - 256 kWh	45	Brown and Sterling
+Chad House and Shannon Englert - 2025 - 50 Units - 256 kWh	45	Brown and Sterling
+Bertram McDowell Jr. and Gina McDowell - 2025 - 47 Units - 240.64 kWh	42	Brown and Sterling
+Susan Gillespie and Findley Gillespie - 2025 - 42 Units - 215.04 kWh	38	Brown and Sterling
+David Bossio - 2025 - 42 Units - 215.04 kWh	38	Brown and Sterling
+RJon Robins and Alejandra Leibovich - 2025 - 40 Units - 204.8 kWh	36	Brown and Sterling
+Thomas Petrelli and Melinda Previtera - 2025 - 40 Units - 204.8 kWh	36	Brown and Sterling
+Douglas Russell and Elise Buie - 2025 - 37 Units - 189.44 kWh	33	Brown and Sterling
+Stephen B. Curtis and Mackenzie J. Curtis - 2025 - 32 Units - 163.84 kWh	29	Brown and Sterling
+William F. Merlin - 2025 - 30 Units - 153.6 kWh	27	Brown and Sterling
+Bryan Fagan - 2025 - 25 Units - 128 kWh	23	Brown and Sterling
+Andrew Pickett - 2025 - 25 Units - 128 kWh	23	Brown and Sterling
+Jeff Barrett - 2025 - 22 Units - 112.64 kWh	20	Brown and Sterling
+Swapnil Pradhan and Shamika Durve - 2025 - 20 Units - 102.4 kWh	18	Brown and Sterling
+Elissa Fitzmartin - 2025 - 20 Units - 102.4 kWh	18	Brown and Sterling
+Emily Phillips - 2025 - 20 Units - 102.4 kWh	18	Brown and Sterling
+Stacy Tucker and James Tucker - 2025 - 20 Units - 102.4 kWh	18	Brown and Sterling
+Joel Hudson - 2025 - 20 Units - 102.4 kWh	18	Brown and Sterling
+Bradford Johnson - 2025 - 20 Units - 102.4 kWh	18	Brown and Sterling
+Mickey Keenan - 2025 - 20 Units - 102.4 kWh	18	Brown and Sterling
+Jacqueline & James Banks - 2025 - 20 Units - 102.4 kWh	18	Brown and Sterling
+Daniel Ciment and Erin Ciment - 2025 - 17 Units - 87.04 kWh	15	Brown and Sterling
+Howard Chang and Anni Zhao - 2025 - 87.04 kWh	15	Brown and Sterling
+Jeremy Bradfield - 2025 - 15 Units - 76.8 kWh	14	Brown and Sterling
+Mario Arguello and Karla Arguello - 2025 - 15 Units - 76.8 kWh	14	Brown and Sterling
+Toral Patel - 2025 - 15 Units - 76.8 kWh	14	Brown and Sterling
+Hrishikesh Gowaikar - 2025 - 15 Units - 76.8 kWh	14	Brown and Sterling
+Gregg Hollander - 2025 - 15 Units - 76.8 kWh	14	Brown and Sterling
+Shawn Hinz - 2025 - 15 Units - 76.8 kWh	14	Brown and Sterling
+Michelle Roberts - 2025 - 15 Units - 76.8 kWh	14	Brown and Sterling
+Jill & James Ruane - 2025 - 15 Units - 76.8 kWh	14	Brown and Sterling
+Paul Weissman - 2025 - 12 Units - 61.44 kWh	11	Brown and Sterling
+David Chin and Monica Chin - 2025 - 12 Units - 61.44 kWh	11	Brown and Sterling
+Adam Witzburg and Francesca Witzburg - 2025 - 12 Units - 61.44 kWh	11	Brown and Sterling
+Bryan Pape and Rebecca Pape - 2025 - 12 Units - 61.44 kWh	11	Brown and Sterling
+Brett Trembly - 2025 - 12 Units - 61.44 kWh	11	Brown and Sterling
+Michael Urbina - 2025 - 12 Units - 61.44 kWh	11	Brown and Sterling
+Dr. Brad Cohen - 2025 - 12 Units - 61.44 kWh	11	Brown and Sterling
+Deborah Smith - 2025 - 12 Units - 61.44 kWh	11	Brown and Sterling
+Pietro Canestrelli and Kristen Canestrelli - 2025 - 10 Units - 51.2 kWh	9	Brown and Sterling
+Ilya Filmus and Ilona Filmus - 2025 - 10 Units - 51.2 kWh	9	Brown and Sterling
+Sayed Ashar Ahmed and Syeda Zain Siddiq - 2025 - 10 Units - 51.2 kWh	9	Brown and Sterling
+Deborah L Moller and Steven D Moller - 2025 - 10 Units - 51.2 kWh	9	Brown and Sterling
+Eric Wood - 2025 - 10 Units - 51.2 kWh	9	Brown and Sterling
+Justin Box - 2025 - 10 Units - 51.2 kWh	9	Brown and Sterling
+James Cross and Kelsie Cross - 2025 - 10 Units - 51.2 kWh	9	Brown and Sterling
+Matt Short - 2025 - 10 Units - 51.2 kWh	9	Brown and Sterling
+Kathleen & Zack Hetrick - 2025 - 10 Units - 51.2 kWh	9	Brown and Sterling
+Jennifer Hargrave - 2025 - 10 Units - 51.2 kWh	9	Brown and Sterling
+Allyson & Steve Neale - 2025 - 10 Units - 51.2 kWh	9	Brown and Sterling
+Maria Quiroga and Patrick Murtha - 2025 - 10 Units - 51.2 kWh	9	Brown and Sterling
+Eric Lee - 2025 - 10 Units - 51.2 kWh	9	Brown and Sterling
+Meghan Freed - 2025 - 10 Units - 51.2 kWh	9	Brown and Sterling
+David Thurmond and Kimberly Thurmond - 2025 - 7 Units - 35.84 kWh	6	Brown and Sterling
+Austin Townsend - 2025 - 7 Units - 35.84 kWh	6	Brown and Sterling
+Xavier Martine and Christine Iserman - 2025 - 7 Units - 35.84 kWh	6	Brown and Sterling
+Melinda Grimaldi and Wellington Siqueira - 2025 - 7 Units - 35.84 kWh	6	Brown and Sterling
+Aaron Warner - 2025 - 7 Units - 35.84 kWh	6	Brown and Sterling
+Peter Goldberg - 2025 - 7 Units - 35.84 kWh	6	Brown and Sterling
+Victoria Collier - 2025 - 7 Units - 35.84 kWh	6	Brown and Sterling
+Mandy Hancock - 2025 - 7 Units - 35.84 kWh	6	Brown and Sterling
+Marc Cerniglia and Emily Cerniglia - 2025 - 7 Units - 35.84 kWh	6	Brown and Sterling
+Marshall Cohen and Jane Cohen - 2025 - 5 Units - 25.6 kWh	5	Brown and Sterling
+Anthony Strobel and Erin Strobel - 2025 - 5 Units - 25.6 kWh	5	Brown and Sterling
+Daniel McLafferty and Elizabeth McLafferty - 2025 - 5 Units - 25.6 kWh	5	Brown and Sterling
+Holly Hahn and Roy Hahn - 2025 - 5 Units - 25.6 kWh	5	Brown and Sterling
+Sunny Park - 2025 - 5 Units - 25.6 kWh	5	Brown and Sterling
+Sara Bacon - 2025 - 5 Units - 25.6 kWh	5	Brown and Sterling
+Christopher Athans - 2025 - 5 Units - 25.6 kWh	5	Brown and Sterling
+Patrick Eddolls - 2025 - 5 Units - 25.6 kWh	5	Brown and Sterling
+Amanda J. Wood - 2025 - 5 Units - 25.6 kWh	5	Brown and Sterling
+Michael Keller - 2025 - 5 Units - 25.6 kWh	5	Brown and Sterling
+Adam Cohen and Stephanie Martinez - 2025 - 5 Units - 25.6 kWh	5	Brown and Sterling
+Joshua Wood - 2025 - 5 Units - 25.6 kWh	5	Brown and Sterling
+Jennifer Reardon - 2025 - 5 Units - 25.6 kWh	5	Brown and Sterling
+Richard P. Sybert - 2025 - 5 Units - 25.6 kWh	5	Brown and Sterling
+Jay Dell - 2025 - 5 Units - 25.6 kWh	5	Brown and Sterling
+Samah Abukhodeir and Jose Leon - 2025 - 5 Units - 25.6 kWh	5	Brown and Sterling
+Christopher D'Anjou and Shelby D'Anjou - 2025 - 5 Units - 25.6 kWh	5	Brown and Sterling
+Margaret Barrett - 2025 - 5 Units - 25.6 kWh	5	Brown and Sterling
+Jeremy Westlake - 2025 - 5 Units - 25.6 kWh	5	Brown and Sterling
+Oscar Ferenczi - 2025 - 5 Units - 25.6 kWh	5	Brown and Sterling
+Christina L Williams - 2025 - 5 Units - 25.6 kWh	5	Brown and Sterling
+Bradley Crocco - 2025 - 5 Units - 25.6 kWh	5	Brown and Sterling
+Sara & Hisham Khaki - 2025 - 5 Units - 25.6 kWh	5	Brown and Sterling
+Katherine Miller - 2025 - 5 Units - 25.6 kWh	5	Brown and Sterling
+Enrique Fernandez - 2025 - 5 Units - 25.6 kWh	5	Brown and Sterling
+Vanessa Vasquez and Julian Vasquez - 2025 - 5 Units - 25.6 kWh	5	Brown and Sterling
+Carla & Wayne Roggi - 2025 - 5 Units - 25.6 kWh	5	Brown and Sterling
+Angela & Kevin Klenk - 2025 - 5 Units - 25.6 kWh	5	Brown and Sterling
+Peter Jaraysi - 2025 - 5 Units - 25.6 kWh	5	Brown and Sterling
+Matt Bratlien - 2025 - 5 Units - 25.6 kWh	5	Brown and Sterling
+Kevin Riley and Eric Riley - 2025 - 4 Units - 20.48 kWh	4	Brown and Sterling
+Michael Markopoulos and Andrea Markopoulos - 2025 - 4 Units - 20.48 kWh	4	Brown and Sterling
+Shela Hager - 2025 - 4 Units - 20.48 kWh	4	Brown and Sterling
+Mark Kirchen - 2025 - 2 Units - 10.24 kWh	2	Brown and Sterling
+David Wells and Victoria Wells - 2025 - 2 Units - 10.24 kWh	2	Brown and Sterling
+Jesse Froehling and Sarah Butterfield - 2025 - 2 Units - 10.24 kWh	2	Brown and Sterling
+Saif Choudhury - 2025 - 2 Units - 10.24 kWh	2	Brown and Sterling
+William Parco - 2025 - 2 Units - 10.24 kWh	2	Brown and Sterling
+Hamid Reza Okhovvatgilani - 2025 - 2 Units - 10.24 kWh	2	Brown and Sterling
+Bo Gibbons and Lynsi Gibbons - 2025 - 2 Units - 10.24 kWh	2	Brown and Sterling
+Nathan Coonen and Rose Coonen - 2025 - 2 Units - 10.24 kWh	2	Brown and Sterling
+William Simmonds - 2025 - 2 Units - 10.24 kWh	2	Brown and Sterling
+Debra Whitson and John Haverlick - 2025 - 2 Units - 10.24 kWh	2	Brown and Sterling
+Angela Roberts - 2025 - 2 Units - 10.24 kWh	2	Brown and Sterling
+Alexa & Craig Robinson - 2025 - 2 Units - 10.24 kWh	2	Brown and Sterling
+Channa Borman - 2025 - 2 Units - 10.24 kWh	2	Brown and Sterling
+Lawrence Brown - 2025 - 2 Units - 10.24 kWh	2	Brown and Sterling
+Lisa and GL Dart - 2025 - 2 Units - 10.24 kWh	2	Brown and Sterling
+Natasha & Henry Roggi - 2025 - 2 Units - 10.24 kWh	2	Brown and Sterling
+Suzette Graham - 2025 - 2 Units - 10.24 kWh	2	Brown and Sterling
+Paul Abraham - 2025 - 2 Units - 10.24 kWh	2	Brown and Sterling
+Brad Smith - 2025 - 85 Units - 435.2 kWh	77	Cory Reader
+Stephen and Patricia Murray - 2025 - 165 Units - 844.8 kWh	149	Cory Reader
+Stephen Murray Jr - 2025 - 90 Units - 460.8 kWh	81	Cory Reader
+Reed Goossens - 2025 - 81 Units - 414.72 kWh	73	Cory Reader
+Srinivas Pinapala - 2025 - 26 Units - 133.12 kWh	23	Deepak Sharma
+Suresh Rajasekaran - 2025 - 20 Units - 102.4 kWh	18	Deepak Sharma
+Natalie Franco - 2025 - 17 Units - 87.04 kWh	15	Dennis Drake
+Jacob Bernhardt - 2025 - 15 Units - 76.8 kWh	14	Dennis Drake
+Danielle Porter - 2025 - 685 Units - 3507.2 kWh	617	Dennis Drake
+Diederick van der Velde - 2025 - 565 Units - 2892.8 kWh	509	Dennis Drake
+Ryan Rudd - 2025 - 509 Units - 2606.08 kWh	458	Dennis Drake
+Scott Graap - 2025 - 193 Units - 988.16 kWh	174	Dennis Drake
+Pat Yoakam - 2025 - 186 Units - 952.32 kWh	167	Dennis Drake
+James Marion Carlow - 2025 - 183 Units - 936.96 kWh	165	Dennis Drake
+Brad Carlow - 2025 - 164 Units - 839.68 kWh	148	Dennis Drake
+Jerramy Johnson - 2025 - 158 Units - 808.96 kWh	142	Dennis Drake
+Anne Marie Van Der Velde - 2025 - 146 Units - 747.52 kWh	131	Dennis Drake
+William Grove - 2025 - 146 Units - 747.52 kWh	131	Dennis Drake
+Ernest Lee Puckett - 2025 - 141 Units - 721.92 kWh	127	Dennis Drake
+Ben Morse DVM - 2025 - 130 Units - 665.6 kWh	117	Dennis Drake
+NICHOLAS HOLLENKAMP - 2025 - 126 Units - 645.12 kWh	113	Dennis Drake
+Erin Preece - 2025 - 124 Units - 634.88 kWh	112	Dennis Drake
+Hemant Chatrath - 2025 - 114 Units - 583.68 kWh	103	Dennis Drake
+David Meadows - 2025 - 98 Units - 501.76 kWh	88	Dennis Drake
+Kenneth Wood - 2025 - 98 Units - 501.76 kWh	88	Dennis Drake
+Corrine Burger - 2025 - 96 Units - 491.52 kWh	86	Dennis Drake
+Anandamoy Sen - 2025 - 96 Units - 491.52 kWh	86	Dennis Drake
+Mike Farrington - 2025 - 92 Units - 471.04 kWh	83	Dennis Drake
+Bryan Gard - 2025 - 90 Units - 460.8 kWh	81	Dennis Drake
+Chandni Pakalapati - 2025 - 75 Units - 384 kWh	68	Dennis Drake
+Chris Wantlin - 2025 - 75 Units - 384 kWh	68	Dennis Drake
+Laurel Poole - 2025 - 73 Units - 373.76 kWh	66	Dennis Drake
+Sarah Churton - 2025 - 72 Units - 368.64 kWh	65	Dennis Drake
+Suvarna Darapu - 2025 - 71 Units - 363.52 kWh	64	Dennis Drake
+Zach Bassett - 2025 - 71 Units - 363.52 kWh	64	Dennis Drake
+Romy Raju - 2025 - 70 Units - 358.4 kWh	63	Dennis Drake
+Chandrasekhar Laveti - 2025 - 69 Units - 353.28 kWh	62	Dennis Drake
+Mark Groves - 2025 - 69 Units - 353.28 kWh	62	Dennis Drake
+Chandler Anthony - 2025 - 68 Units - 348.16 kWh	61	Dennis Drake
+Lance Ohara - 2025 - 65 Units - 332.8 kWh	59	Dennis Drake
+Steve Burton - 2025 - 64 Units - 327.68 kWh	58	Dennis Drake
+Nicholas Blickenstaff - 2025 - 63 Units - 322.56 kWh	57	Dennis Drake
+Brett Anderson - 2025 - 63 Units - 322.56 kWh	57	Dennis Drake
+Satyanarayana Mandalapu - 2025 - 61 Units - 312.32 kWh	55	Dennis Drake
+Akshar Patel - 2025 - 60 Units - 307.2 kWh	54	Dennis Drake
+John Zachary Shillingford - 2025 - 60 Units - 307.2 kWh	54	Dennis Drake
+Terry Barker - 2025 - 58 Units - 296.96 kWh	52	Dennis Drake
+Cecil Amerson - 2025 - 58 Units - 296.96 kWh	52	Dennis Drake
+James Cebe - 2025 - 56 Units - 286.72 kWh	50	Dennis Drake
+Prasad Konduri - 2025 - 55 Units - 281.6 kWh	50	Dennis Drake
+Stephen Prendiville - 2025 - 53 Units - 271.36 kWh	48	Dennis Drake
+Ashwin Bihari - 2025 - 53 Units - 271.36 kWh	48	Dennis Drake
+Joseph Mejia - 2025 - 52 Units - 266.24 kWh	47	Dennis Drake
+Eric Welling - 2025 - 51 Units - 261.12 kWh	46	Dennis Drake
+Josh Sitzer - 2025 - 51 Units - 261.12 kWh	46	Dennis Drake
+Steve Abe - 2025 - 50 Units - 256 kWh	45	Dennis Drake
+Heather McKay - 2025 - 48 Units - 245.76 kWh	43	Dennis Drake
+Brent Walker - 2025 - 48 Units - 245.76 kWh	43	Dennis Drake
+Evan Correll - 2025 - 48 Units - 245.76 kWh	43	Dennis Drake
+Kamlesh Patel - 2025 - 47 Units - 240.64 kWh	42	Dennis Drake
+Allen Glenn - 2025 - 46 Units - 235.52 kWh	41	Dennis Drake
+Thiagarajan Narasimhan - 2025 - 45 Units - 230.4 kWh	41	Dennis Drake
+Duane Sizemore - 2025 - 45 Units - 230.4 kWh	41	Dennis Drake
+Benjamin Willems - 2025 - 44 Units - 225.28 kWh	40	Dennis Drake
+Sudhakar Chintharlapalli - 2025 - 44 Units - 225.28 kWh	40	Dennis Drake
+Joan Goyeau - 2025 - 43 Units - 220.16 kWh	39	Dennis Drake
+Sardar Gautham - 2025 - 41 Units - 209.92 kWh	37	Dennis Drake
+Austin Dunbar - 2025 - 41 Units - 209.92 kWh	37	Dennis Drake
+Padmavathi Pondugula - 2025 - 40 Units - 204.8 kWh	36	Dennis Drake
+Mason Mileur - 2025 - 40 Units - 204.8 kWh	36	Dennis Drake
+Eugene Kim - 2025 - 40 Units - 204.8 kWh	36	Dennis Drake
+Christopher Laveau - 2025 - 39 Units - 199.68 kWh	35	Dennis Drake
+Matthew Laveau - 2025 - 39 Units - 199.68 kWh	35	Dennis Drake
+Earl Eastman - 2025 - 38 Units - 194.56 kWh	34	Dennis Drake
+Cory Sims - 2025 - 38 Units - 194.56 kWh	34	Dennis Drake
+Jacob Brown - 2025 - 37 Units - 189.44 kWh	33	Dennis Drake
+George Bakas - 2025 - 37 Units - 189.44 kWh	33	Dennis Drake
+Ajay Rathore - 2025 - 37 Units - 189.44 kWh	33	Dennis Drake
+Oluwaseun Abiola Matthew - 2025 - 36 Units - 184.32 kWh	32	Dennis Drake
+Matt Moser - 2025 - 35 Units - 179.2 kWh	32	Dennis Drake
+Paul Mattimoe - 2025 - 35 Units - 179.2 kWh	32	Dennis Drake
+Sridhar Ravilla - 2025 - 35 Units - 179.2 kWh	32	Dennis Drake
+Sukhbir Kaur - 2025 - 33 Units - 168.96 kWh	30	Dennis Drake
+Pankaj Purohit - 2025 - 33 Units - 168.96 kWh	30	Dennis Drake
+Sendilvadivu Ganesan - 2025 - 33 Units - 168.96 kWh	30	Dennis Drake
+Aniruddha Basak - 2025 - 32 Units - 163.84 kWh	29	Dennis Drake
+Vangapelli Santhosh Kumar - 2025 - 31 Units - 158.72 kWh	28	Dennis Drake
+Chris Hodgman - 2025 - 31 Units - 158.72 kWh	28	Dennis Drake
+Jon Hustedt - 2025 - 31 Units - 158.72 kWh	28	Dennis Drake
+Kevin Walter - 2025 - 31 Units - 158.72 kWh	28	Dennis Drake
+Giacomo Biscotti - 2025 - 30 Units - 153.6 kWh	27	Dennis Drake
+Tim Putnam - 2025 - 30 Units - 153.6 kWh	27	Dennis Drake
+Ravi Mishra - 2025 - 29 Units - 148.48 kWh	26	Dennis Drake
+Diron Tappin - 2025 - 29 Units - 148.48 kWh	26	Dennis Drake
+Ray Riemann - 2025 - 29 Units - 148.48 kWh	26	Dennis Drake
+Alan Prohaska - 2025 - 29 Units - 148.48 kWh	26	Dennis Drake
+Rashim Khadka - 2025 - 28 Units - 143.36 kWh	25	Dennis Drake
+Rohan Lam - 2025 - 28 Units - 143.36 kWh	25	Dennis Drake
+Purshottam Vishwakarma - 2025 - 28 Units - 143.36 kWh	25	Dennis Drake
+Pavan Krishnamurthy - 2025 - 28 Units - 143.36 kWh	25	Dennis Drake
+Sriperumal Thirugnanasambanthan - 2025 - 28 Units - 143.36 kWh	25	Dennis Drake
+Jinkyu Lee - 2025 - 27 Units - 138.24 kWh	24	Dennis Drake
+Matthew Hubbard - 2025 - 27 Units - 138.24 kWh	24	Dennis Drake
+Shai Traister - 2025 - 27 Units - 138.24 kWh	24	Dennis Drake
+Paul Mandeville - 2025 - 27 Units - 138.24 kWh	24	Dennis Drake
+Young Kim - 2025 - 26 Units - 133.12 kWh	23	Dennis Drake
+Steven Walker - 2025 - 26 Units - 133.12 kWh	23	Dennis Drake
+Thomas Thompson - 2025 - 26 Units - 133.12 kWh	23	Dennis Drake
+Josh Trutt - 2025 - 26 Units - 133.12 kWh	23	Dennis Drake
+James Blake Carlow - 2025 - 25 Units - 128 kWh	23	Dennis Drake
+Tan Fei Shih - 2025 - 25 Units - 128 kWh	23	Dennis Drake
+Brandon Nixon - 2025 - 25 Units - 128 kWh	23	Dennis Drake
+Lokesh Krishnarajpet - 2025 - 25 Units - 128 kWh	23	Dennis Drake
+Wesley McGugin - 2025 - 24 Units - 122.88 kWh	22	Dennis Drake
+Alicia Evolga - 2025 - 24 Units - 122.88 kWh	22	Dennis Drake
+Chandrasekhar Nandyala - 2025 - 24 Units - 122.88 kWh	22	Dennis Drake
+Mike Moser - 2025 - 23 Units - 117.76 kWh	21	Dennis Drake
+Jarrod Jones - 2025 - 23 Units - 117.76 kWh	21	Dennis Drake
+Adrian Gomez - 2025 - 23 Units - 117.76 kWh	21	Dennis Drake
+Stephanie Vaughan-Miller - 2025 - 22 Units - 112.64 kWh	20	Dennis Drake
+Mahbubul Alam - 2025 - 22 Units - 112.64 kWh	20	Dennis Drake
+Mathew Joseph - 2025 - 22 Units - 112.64 kWh	20	Dennis Drake
+Jeff Hillenbrand - 2025 - 22 Units - 112.64 kWh	20	Dennis Drake
+Thomas Scott Sutphin - 2025 - 22 Units - 112.64 kWh	20	Dennis Drake
+Brent Chavez - 2025 - 22 Units - 112.64 kWh	20	Dennis Drake
+Alexina White - 2025 - 21 Units - 107.52 kWh	19	Dennis Drake
+Serhat Ozcanli - 2025 - 21 Units - 107.52 kWh	19	Dennis Drake
+Jitendra Kulshreshtha - 2025 - 21 Units - 107.52 kWh	19	Dennis Drake
+Yourim An - 2025 - 21 Units - 107.52 kWh	19	Dennis Drake
+Hugh F Hale III - 2025 - 20 Units - 102.4 kWh	18	Dennis Drake
+Dean Paul - 2025 - 20 Units - 102.4 kWh	18	Dennis Drake
+Tim Vandagriff - 2025 - 20 Units - 102.4 kWh	18	Dennis Drake
+Randy Diamond - 2025 - 20 Units - 102.4 kWh	18	Dennis Drake
+Polly D Meek - 2025 - 20 Units - 102.4 kWh	18	Dennis Drake
+Ram Arthanari - 2025 - 20 Units - 102.4 kWh	18	Dennis Drake
+Phillip Guerra - 2025 - 20 Units - 102.4 kWh	18	Dennis Drake
+Nadine Underbrink - 2025 - 19 Units - 97.28 kWh	17	Dennis Drake
+Jonathan Burtoft - 2025 - 19 Units - 97.28 kWh	17	Dennis Drake
+Daryl Charlson - 2025 - 19 Units - 97.28 kWh	17	Dennis Drake
+Scott Crisler - 2025 - 19 Units - 97.28 kWh	17	Dennis Drake
+Deborah Stroud - 2025 - 18 Units - 92.16 kWh	16	Dennis Drake
+Elizabeth "Betsy" Bankston - 2025 - 18 Units - 92.16 kWh	16	Dennis Drake
+Hollind Van eijl - 2025 - 18 Units - 92.16 kWh	16	Dennis Drake
+David Hoang - 2025 - 18 Units - 92.16 kWh	16	Dennis Drake
+Mark Pfister - 2025 - 18 Units - 92.16 kWh	16	Dennis Drake
+Jorge Andazola - 2025 - 17 Units - 87.04 kWh	15	Dennis Drake
+Sam Mukherjee - 2025 - 17 Units - 87.04 kWh	15	Dennis Drake
+Sigfredo Javier Olivencia - 2025 - 17 Units - 87.04 kWh	15	Dennis Drake
+Artan Nikaj - 2025 - 17 Units - 87.04 kWh	15	Dennis Drake
+Nicholas Melfi - 2025 - 17 Units - 87.04 kWh	15	Dennis Drake
+Joji Joseph - 2025 - 16 Units - 81.92 kWh	14	Dennis Drake
+Dena Williams - 2025 - 16 Units - 81.92 kWh	14	Dennis Drake
+Jaya Rajeswari Pitchika - 2025 - 16 Units - 81.92 kWh	14	Dennis Drake
+Anetta Hendershot - 2025 - 16 Units - 81.92 kWh	14	Dennis Drake
+Denise Boyer - 2025 - 16 Units - 81.92 kWh	14	Dennis Drake
+Bryan Simon - 2025 - 16 Units - 81.92 kWh	14	Dennis Drake
+Neil Sharma - 2025 - 16 Units - 81.92 kWh	14	Dennis Drake
+Jasen Bronec - 2025 - 16 Units - 81.92 kWh	14	Dennis Drake
+Brian Werst - 2025 - 16 Units - 81.92 kWh	14	Dennis Drake
+Elizabeth Davis - 2025 - 16 Units - 81.92 kWh	14	Dennis Drake
+Cara Quant - 2025 - 16 Units - 81.92 kWh	14	Dennis Drake
+Sai Dheeraj Guntupalli - 2025 - 16 Units - 81.92 kWh	14	Dennis Drake
+Durvejai Sheobaran - 2025 - 15 Units - 76.8 kWh	14	Dennis Drake
+Kathy Jackson - 2025 - 15 Units - 76.8 kWh	14	Dennis Drake
+Keith Vandagriff - 2025 - 15 Units - 76.8 kWh	14	Dennis Drake
+Waiel Hussein - 2025 - 14 Units - 71.68 kWh	13	Dennis Drake
+Monica Singh - 2025 - 14 Units - 71.68 kWh	13	Dennis Drake
+Sharif Shamsundin - 2025 - 14 Units - 71.68 kWh	13	Dennis Drake
+Meghan Colgan - 2025 - 14 Units - 71.68 kWh	13	Dennis Drake
+Mark Redfern - 2025 - 13 Units - 66.56 kWh	12	Dennis Drake
+Nneka olunwa - 2025 - 12 Units - 61.44 kWh	11	Dennis Drake
+Jeff Spaetzel - 2025 - 12 Units - 61.44 kWh	11	Dennis Drake
+Tarun Mandava - 2025 - 12 Units - 61.44 kWh	11	Dennis Drake
+Satish Gajjala - 2025 - 11 Units - 56.32 kWh	10	Dennis Drake
+Bo Park - 2025 - 11 Units - 56.32 kWh	10	Dennis Drake
+Umaya Saika Sharma - 2025 - 11 Units - 56.32 kWh	10	Dennis Drake
+Tom Walsh - 2025 - 11 Units - 56.32 kWh	10	Dennis Drake
+Nancy Reardon - 2025 - 11 Units - 56.32 kWh	10	Dennis Drake
+Kevin Krese - 2025 - 11 Units - 56.32 kWh	10	Dennis Drake
+Sudhaker Adusumilly - 2025 - 10 Units - 51.2 kWh	9	Dennis Drake
+David M Niderost - 2025 - 10 Units - 51.2 kWh	9	Dennis Drake
+Shannon Zuniga - 2025 - 10 Units - 51.2 kWh	9	Dennis Drake
+Lisa Naito - 2025 - 9 Units - 46.08 kWh	8	Dennis Drake
+Courtney Walker - 2025 - 31 Units - 158.72 kWh	28	Dennis Drake
+David Mortier - 2025 - 15 Units - 76.8 kWh	14	Dennis Drake
+Dineshbabu Dhandapani - 2025 - 14 Units - 71.68 kWh	13	Dennis Drake
+Nathan Butler - 2025 - 483 Units - 2472.96 kWh	435	Ed Lyon
+Matt Wilson - 2025 - 75 Units - 384 kWh	68	Ed Lyon
+Katrina Smaaladen - 2025 - 61 Units - 312.32 kWh	55	Ed Lyon
+Aaron Bloodsworth - 2025 - 50 Units - 256 kWh	45	Ed Lyon
+Susan Fenske - 2025 - 38 Units - 194.56 kWh	34	Ed Lyon
+Trent Yang - 2025 - 33 Units - 168.96 kWh	30	Ed Lyon
+Dylan Karley - 2025 - 31 Units - 158.72 kWh	28	Ed Lyon
+Jacob Schumann - 2025 - 29 Units - 148.48 kWh	26	Ed Lyon
+Randy Sadler - 2025 - 28 Units - 143.36 kWh	25	Ed Lyon
+Andrew Oestreich - 2025 - 27 Units - 138.24 kWh	24	Ed Lyon
+Lance Audirsch - 2025 - 25 Units - 128 kWh	23	Ed Lyon
+William LaPiana - 2025 - 16 Units - 81.92 kWh	14	Ed Lyon
+Connor Amey - 2025 - 14 Units - 71.68 kWh	13	Ed Lyon
+Roy Scott Farley - 2025 - 11 Units - 56.32 kWh	10	Ed Lyon
+Steven Rickman - 2025 - 9 Units - 46.08 kWh	8	Ed Lyon
+Devin Giron - 2025 - 15 Units - 76.8 kWh	14	Eric Burgmaier
+Vassan Pillai - 2025 - 12 Units - 61.44 kWh	11	Eric Burgmaier
+Galen Detrik-Hartenberger - 2025 - 12 Units - 61.44 kWh	11	Eric Burgmaier
+Eric Burgmaier - 2025 - 12 Units - 61.44 kWh	11	Eric Burgmaier
+Sean Koh - 2025 - 190 Units - 972.8 kWh	171	Everett Morris
+Nathan Cleaver - 2025 - 182 Units - 931.84 kWh	164	Everett Morris
+Hyung Cho - 2025 - 179 Units - 916.48 kWh	161	Everett Morris
+Frank Mueller - 2025 - 178 Units - 911.36 kWh	160	Everett Morris
+Joseph Goetz - 2025 - 172 Units - 880.64 kWh	155	Everett Morris
+David Chin Yee - 2025 - 156 Units - 798.72 kWh	140	Everett Morris
+Albert Diehl III - 2025 - 152 Units - 778.24 kWh	137	Everett Morris
+Charlie Stanton - 2025 - 134 Units - 686.08 kWh	121	Everett Morris
+Yogin Patel - 2025 - 131 Units - 670.72 kWh	118	Everett Morris
+Oluseun Olufade - 2025 - 125 Units - 640 kWh	113	Everett Morris
+Harpreet Walia - 2025 - 124 Units - 634.88 kWh	112	Everett Morris
+Patrick Hanson - 2025 - 121 Units - 619.52 kWh	109	Everett Morris
+Michelle Wan - 2025 - 112 Units - 573.44 kWh	101	Everett Morris
+James Okun - 2025 - 105 Units - 537.6 kWh	95	Everett Morris
+John O'Neill - 2025 - 103 Units - 527.36 kWh	93	Everett Morris
+Brian Cross - 2025 - 102 Units - 522.24 kWh	92	Everett Morris
+Scott Blair - 2025 - 99 Units - 506.88 kWh	89	Everett Morris
+Sagar Amin - 2025 - 99 Units - 506.88 kWh	89	Everett Morris
+Willie Earl Landrum - 2025 - 98 Units - 501.76 kWh	88	Everett Morris
+Elizabeth Vengoechea - 2025 - 96 Units - 491.52 kWh	86	Everett Morris
+Natalie Schmitz - 2025 - 96 Units - 491.52 kWh	86	Everett Morris
+Benjamin Johnson - 2025 - 90 Units - 460.8 kWh	81	Everett Morris
+Lenore Patel - 2025 - 89 Units - 455.68 kWh	80	Everett Morris
+Arthur Baker - 2025 - 87 Units - 445.44 kWh	78	Everett Morris
+Mukesh Kumar - 2025 - 81 Units - 414.72 kWh	73	Everett Morris
+Bennett Cierny - 2025 - 81 Units - 414.72 kWh	73	Everett Morris
+Weston Waxweiler - 2025 - 76 Units - 389.12 kWh	68	Everett Morris
+Meredith Kallaher - 2025 - 72 Units - 368.64 kWh	65	Everett Morris
+Brandon Woods - 2025 - 70 Units - 358.4 kWh	63	Everett Morris
+Anna Fabrega - 2025 - 68 Units - 348.16 kWh	61	Everett Morris
+Autumn Francis - 2025 - 65 Units - 332.8 kWh	59	Everett Morris
+Evan Schoenberg - 2025 - 65 Units - 332.8 kWh	59	Everett Morris
+Joel Phillips - 2025 - 63 Units - 322.56 kWh	57	Everett Morris
+Jerred Wilson - 2025 - 62 Units - 317.44 kWh	56	Everett Morris
+Kishore Bobba - 2025 - 57 Units - 291.84 kWh	51	Everett Morris
+Neha Sawhney - 2025 - 56 Units - 286.72 kWh	50	Everett Morris
+Tiffany Stanfill - 2025 - 54 Units - 276.48 kWh	49	Everett Morris
+Anand Kenia - 2025 - 53 Units - 271.36 kWh	48	Everett Morris
+Tiffany Hamilton - 2025 - 53 Units - 271.36 kWh	48	Everett Morris
+Ryan Glenn - 2025 - 52 Units - 266.24 kWh	47	Everett Morris
+Corey Coward - 2025 - 50 Units - 256 kWh	45	Everett Morris
+Mohamed Momin - 2025 - 44 Units - 225.28 kWh	40	Everett Morris
+Steven Garono - 2025 - 43 Units - 220.16 kWh	39	Everett Morris
+Stacy Joseph - 2025 - 42 Units - 215.04 kWh	38	Everett Morris
+Leticia Valencia - 2025 - 40 Units - 204.8 kWh	36	Everett Morris
+John Caplinger - 2025 - 39 Units - 199.68 kWh	35	Everett Morris
+Donald Unser - 2025 - 39 Units - 199.68 kWh	35	Everett Morris
+Joseph Christenbury - 2025 - 38 Units - 194.56 kWh	34	Everett Morris
+Jai Lal - 2025 - 36 Units - 184.32 kWh	32	Everett Morris
+Michelle Lall - 2025 - 36 Units - 184.32 kWh	32	Everett Morris
+Stephen Cox - 2025 - 33 Units - 168.96 kWh	30	Everett Morris
+Danielle Howe - 2025 - 32 Units - 163.84 kWh	29	Everett Morris
+Jayesh Patel - 2025 - 32 Units - 163.84 kWh	29	Everett Morris
+Morgan White - 2025 - 31 Units - 158.72 kWh	28	Everett Morris
+Erin Schlader - 2025 - 29 Units - 148.48 kWh	26	Everett Morris
+Jaymin Patel - 2025 - 29 Units - 148.48 kWh	26	Everett Morris
+Daniel Nash - 2025 - 27 Units - 138.24 kWh	24	Everett Morris
+Menka Lamba - 2025 - 24 Units - 122.88 kWh	22	Everett Morris
+Lindsey Griffin - 2025 - 23 Units - 117.76 kWh	21	Everett Morris
+Kecia Howson - 2025 - 23 Units - 117.76 kWh	21	Everett Morris
+Paul Buren - 2025 - 22 Units - 112.64 kWh	20	Everett Morris
+Darren Glenn - 2025 - 20 Units - 102.4 kWh	18	Everett Morris
+Daron Woodham - 2025 - 19 Units - 97.28 kWh	17	Everett Morris
+Everett Morris - 2025 - 18 Units - 92.16 kWh	16	Everett Morris
+Nathan Trail - 2025 - 18 Units - 92.16 kWh	16	Everett Morris
+Kim Venable - 2025 - 18 Units - 92.16 kWh	16	Everett Morris
+John Luth - 2025 - 17 Units - 87.04 kWh	15	Everett Morris
+Jerry Wilson - 2025 - 17 Units - 87.04 kWh	15	Everett Morris
+Archana Chander - 2025 - 17 Units - 87.04 kWh	15	Everett Morris
+Steven Campbell - 2025 - 16 Units - 81.92 kWh	14	Everett Morris
+Neil Notani - 2025 - 16 Units - 81.92 kWh	14	Everett Morris
+Remedios Rodriguez - 2025 - 15 Units - 76.8 kWh	14	Everett Morris
+Samuel McRoy - 2025 - 14 Units - 71.68 kWh	13	Everett Morris
+Marnette Bender - 2025 - 7 Units - 35.84 kWh	6	Everett Morris
+Nikhil Mallipeddi - 2025 - 84 Units - 430.08 kWh	76	Jayanthi Ganapathy
+Gunjan Sood - 2025 - 62 Units - 317.44 kWh	56	Jayanthi Ganapathy
+Rishu Bansal - 2025 - 33 Units - 168.96 kWh	30	Jayanthi Ganapathy
+Justin Bier - 2025 - 33 Units - 168.96 kWh	30	Jayanthi Ganapathy
+Harish Kanneganti - 2025 - 29 Units - 148.48 kWh	26	Jayanthi Ganapathy
+Sai Vishnu - 2025 - 29 Units - 148.48 kWh	26	Jayanthi Ganapathy
+Maksudul Hoque - 2025 - 26 Units - 133.12 kWh	23	Jayanthi Ganapathy
+James Marmion - 2025 - 25 Units - 128 kWh	23	Jayanthi Ganapathy
+Sanketh Balakrishna - 2025 - 19 Units - 97.28 kWh	17	Jayanthi Ganapathy
+Karimulla Shaik - 2025 - 18 Units - 92.16 kWh	16	Jayanthi Ganapathy
+Purushothaman Sadhasivam - 2025 - 18 Units - 92.16 kWh	16	Jayanthi Ganapathy
+Viswakumar Sankaran Viswanadhan - 2025 - 18 Units - 92.16 kWh	16	Jayanthi Ganapathy
+Prashant Reddy - 2025 - 16 Units - 81.92 kWh	14	Jayanthi Ganapathy
+Sudhir Nambiar - 2025 - 15 Units - 76.8 kWh	14	Jayanthi Ganapathy
+Rajesh Singh - 2025 - 14 Units - 71.68 kWh	13	Jayanthi Ganapathy
+Brian Kociuba - 2025 - 14 Units - 71.68 kWh	13	Jayanthi Ganapathy
+Paul Vergara - 2025 - 11 Units - 56.32 kWh	10	Jayanthi Ganapathy
+Jayanthi Ganapathy - 2025 - 9 Units - 46.08 kWh	8	Jayanthi Ganapathy
+Myles Walker - 2025 - 8 Units - 40.96 kWh	7	Jayanthi Ganapathy
+Nhat Nguyen - 2025 - 70 Units - 358.4 kWh	63	Jeramy Smith
+Gary Lu - 2025 - 61 Units - 312.32 kWh	55	Jeramy Smith
+Michael Nguyen - 2025 - 35 Units - 179.2 kWh	32	Jeramy Smith
+LiHua Chen - 2025 - 31 Units - 158.72 kWh	28	Jeramy Smith
+Troy Frazier - 2025 - 27 Units - 138.24 kWh	24	Jeramy Smith
+Christina Greene - 2025 - 25 Units - 128 kWh	23	Jeramy Smith
+Aaron Edelen - 2025 - 22 Units - 112.64 kWh	20	Jeramy Smith
+Omar Harmouche - 2025 - 20 Units - 102.4 kWh	18	Jeramy Smith
+Matthew McCarthy - 2025 - 20 Units - 102.4 kWh	18	Jeramy Smith
+Qian Qian - 2025 - 18 Units - 92.16 kWh	16	Jeramy Smith
+Sasan Khodabakhsh - 2025 - 17 Units - 87.04 kWh	15	Jeramy Smith
+Yen Tran - 2025 - 16 Units - 81.92 kWh	14	Jeramy Smith
+Herbert Marsh - 2025 - 10 Units - 51.2 kWh	9	Jeramy Smith
+David Page - 2025 - 27 Units - 138.24 kWh	24	Jesse Wahl
+Shiloh Wahl - 2025 - 14 Units - 71.68 kWh	13	Jesse Wahl
+Ratiq DeWitt - 2025 - 9 Units - 46.08 kWh	8	Jesse Wahl
+Bradley Sadler - 2025 - 42 Units - 215.04 kWh	38	John Lucido
+David Benavidez - 2025 - 6 Units - 30.72 kWh	5	John Lucido
+Nashmeel Sadjadi - 2025 - 5 Units - 25.6 kWh	5	John Lucido
+Constance Jacobs - 2025 - 10 Units - 51.2 kWh	9	John Lucido
+Corey Alemand - 2025 - 15 Units - 76.8 kWh	14	John Lucido
+James R Sheahan - 2025 - 17 Units - 87.04 kWh	15	John Lucido
+Oluyemi "Yemi" Ajayi - 2025 - 88 Units - 450.56 kWh	79	John Lucido
+Marylyn Pelkey - 2025 - 30 Units - 153.6 kWh	27	Joshua Stroud
+Nicholas "Royal" Mortier - 2025 - 15 Units - 76.8 kWh	14	Joshua Stroud
+Susanne Breen - 2025 - 5 Units - 25.6 kWh	5	Joshua Stroud
+John Ubiera - 2025 - 5 Units - 25.6 kWh	5	Joshua Stroud
+Francis Kigozi - 2025 - 78 Units - 399.36 kWh	70	Kyle Slagle
+James Fernandez - 2025 - 74 Units - 378.88 kWh	67	Kyle Slagle
+Chadd McMahon - 2025 - 57 Units - 291.84 kWh	51	Kyle Slagle
+Fiona Ochtabec - 2025 - 38 Units - 194.56 kWh	34	Kyle Slagle
+Josh Ray - 2025 - 34 Units - 174.08 kWh	31	Kyle Slagle
+James Brecheisen - 2025 - 34 Units - 174.08 kWh	31	Kyle Slagle
+Tim Greiner - 2025 - 27 Units - 138.24 kWh	24	Kyle Slagle
+Julio Soto - 2025 - 26 Units - 133.12 kWh	23	Kyle Slagle
+James Condon - 2025 - 19 Units - 97.28 kWh	17	Kyle Slagle
+Brent Rogers - 2025 - 16 Units - 81.92 kWh	14	Kyle Slagle
+Sarah Hollis - 2025 - 14 Units - 71.68 kWh	13	Kyle Slagle
+Thomas Blaszak - 2025 - 110 Units - 563.2 kWh	99	Kyle Slagle
+Gary Tsai - 2025 - 39 Units - 199.68 kWh	35	Kyle Slagle
+Amber Figueroa - 2025 - 18 Units - 92.16 kWh	16	Kyle Slagle
+Ken Lie - 2025 - 15 Units - 76.8 kWh	14	Kyle Slagle
+Danny Morgan - 2025 - 12 Units - 61.44 kWh	11	Kyle Slagle
+Jason Roberts - 2025 - 39 Units - 199.68 kWh	35	Mike McCormick
+Craig Roberts - 2025 - 39 Units - 199.68 kWh	35	Mike McCormick
+Craig Levinson - 2025 - 8 Units - 40.96 kWh	7	Mitigation Advisors
+Tom Savi - 2025 - 225 Units - 1152 kWh	203	Randy Luebke
+Igor Sister - 2025 - 60 Units - 307.2 kWh	54	Randy Luebke
+Adam Ofer - 2025 - 54 Units - 276.48 kWh	49	Scott Phillips/Steven Cox
+Richard "David" Duke - 2025 - 27 Units - 138.24 kWh	24	Scott Phillips/Steven Cox
+Patrick Mills - 2025 - 20 Units - 102.4 kWh	18	Scott Phillips/Steven Cox
+Saoud Jibran Khan - 2025 - 19 Units - 97.28 kWh	17	Scott Phillips/Steven Cox
+Jordan Richards - 2025 - 19 Units - 97.28 kWh	17	Scott Phillips/Steven Cox
+Jeremiah Post - 2025 - 18 Units - 92.16 kWh	16	Scott Phillips/Steven Cox
+David Child - 2025 - 18 Units - 92.16 kWh	16	Scott Phillips/Steven Cox
+Debra Mont - 2025 - 17 Units - 87.04 kWh	15	Scott Phillips/Steven Cox
+Timothy Barry - 2025 - 17 Units - 87.04 kWh	15	Scott Phillips/Steven Cox
+Suthee Suvansri - 2025 - 16 Units - 81.92 kWh	14	Scott Phillips/Steven Cox
+Shawn Maynard - 2025 - 15 Units - 76.8 kWh	14	Scott Phillips/Steven Cox
+Brian Cameron - 2025 - 13 Units - 66.56 kWh	12	Scott Phillips/Steven Cox
+Shawn Maynard - 2025 - 12 Units - 61.44 kWh	11	Scott Phillips/Steven Cox
+Shawn Maynard - 2025 - 11 Units - 56.32 kWh	10	Scott Phillips/Steven Cox
+Richard Smith - 2025 - 11 Units - 56.32 kWh	10	Scott Phillips/Steven Cox
+Kendall Pearson - 2025 - 10 Units - 51.2 kWh	9	Scott Phillips/Steven Cox
+Jordan Spicer - 2025 - 10 Units - 51.2 kWh	9	Scott Phillips/Steven Cox
+Ryan Hagedorn - 2025 - 20 Units - 102.4 kWh	18	Solar Solutions
+Derek Ostler - 2025 - 5 Units - 25.6 kWh	5	Solar Solutions
+Mitchell Stravitz - 2025 - 26 Units - 133.12 kWh	23	Stephan Brewer
+Nicholas Norden - 2025 - 102 Units - 522.24 kWh	92	Zack Kraines
+Zachary Leacox - 2025 - 91 Units - 465.92 kWh	82	Zack Kraines
+Igor Biberman - 2025 - 38 Units - 194.56 kWh	34	Zack Kraines
+Greg Kaye - 2025 - 15 Units - 76.8 kWh	14	Zack Kraines
+Glenn Shtarkman - 2025 - 14 Units - 71.68 kWh	13	Zack Kraines
+Ernest Burghardt - 2025 - 10 Units - 51.2 kWh	9	Zack Kraines`;
+
+function parseData() {
+    const lines = RAW_CLIENT_DATA.split('\n').filter(l => l.trim());
+    const clients = [];
+    const affiliatesMap = {};
+
+    lines.forEach((line, idx) => {
+        // Regex: [Name] - [Year] - [Orig Units] Units - [kWh] kWh [Adj Units] [Affiliate]
+        // The Adjusted Units is the last number before the text at the end.
+        // Example: "Derek Crain - ... 547.84 kWh 96 Brown and Sterling"
+        // Approach: Split by tabs first? The pasted data might have tabs.
+        // Let's try splitting by tab.
+
+        let parts = line.split('\t');
+        let namePart = '';
+        let adjUnits = 0;
+        let affiliate = '';
+
+        if (parts.length >= 3) {
+            // Format: "Name - Specs" \t "AdjUnits" \t "Affiliate"
+            namePart = parts[0];
+            adjUnits = parseInt(parts[1].trim(), 10);
+            affiliate = parts[2].trim();
+        } else {
+            // Fallback for space separated (less reliable)
+            // Matches: "(.*?) - 2025 - .*? kWh\s+(\d+)\s+(.*)"
+            const regex = /(.*?) - 2025 - .*? kWh\s+(\d+)\s+(.*)/;
+            const match = line.match(regex);
+            if (match) {
+                namePart = match[1];
+                adjUnits = parseInt(match[2], 10);
+                affiliate = match[3];
+            } else {
+                console.warn("Failed to parse line:", line);
+                return;
+            }
+        }
+
+        // Clean name part: "Derek Crain"
+        const clientName = namePart.trim();
+
+        clients.push({
+            id: `c_${idx}`,
+            name: clientName,
+            batteries: adjUnits,
+            affiliate: affiliate
+        });
+
+        if (!affiliatesMap[affiliate]) {
+            affiliatesMap[affiliate] = { name: affiliate, batteries: 0, clientCount: 0 };
+        }
+        affiliatesMap[affiliate].batteries += adjUnits;
+        affiliatesMap[affiliate].clientCount += 1;
+    });
+
+    const affiliates = Object.values(affiliatesMap).map((a, i) => ({ ...a, id: i + 1 }));
+
+    return { clients, affiliates };
+}
+
+const parsed = parseData();
+export const INITIAL_CLIENTS = parsed.clients;
+export const INITIAL_AFFILIATES = parsed.affiliates;
