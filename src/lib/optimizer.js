@@ -52,12 +52,18 @@ const optimizeAffiliateSpread = (locations, clients, exclusiveAffiliateNames, pi
                     // Skip pinned clients
                     if (pinnedClientNames.has(alloc.clientName)) continue;
 
+                    // Skip if this allocation was already moved in this round
+                    if (!sourceLoc.allocations.includes(alloc)) continue;
+
                     // Try to move to a location where this affiliate already has presence
                     for (let j = 0; j < i; j++) {
                         const targetLoc = locations.find(l => l.id === locIds[j]);
                         if (!targetLoc) continue;
-                        if (targetLoc.exclusiveOwner && targetLoc.exclusiveOwner !== affName) continue;
+                        if (targetLoc.exclusiveOwners && targetLoc.exclusiveOwners.size > 0 && !targetLoc.exclusiveOwners.has(affName)) continue;
+                        // Ensure we don't exceed original capacity
                         if (targetLoc.remainingCapacity >= alloc.amount) {
+                            const usedAfterMove = targetLoc.allocations.reduce((s, a) => s + a.amount, 0) + alloc.amount;
+                            if (usedAfterMove > targetLoc.originalCapacity) continue;
                             // Move!
                             sourceLoc.allocations = sourceLoc.allocations.filter(a => a !== alloc);
                             sourceLoc.remainingCapacity += alloc.amount;
@@ -89,7 +95,7 @@ const optimizeAffiliateSpread = (locations, clients, exclusiveAffiliateNames, pi
                 const locB = locsWithAllocs[lj];
 
                 // Skip exclusive locations
-                if (locA.exclusiveOwner || locB.exclusiveOwner) continue;
+                if ((locA.exclusiveOwners && locA.exclusiveOwners.size > 0) || (locB.exclusiveOwners && locB.exclusiveOwners.size > 0)) continue;
 
                 for (let ai = 0; ai < locA.allocations.length; ai++) {
                     const allocA = locA.allocations[ai];
@@ -138,9 +144,118 @@ const optimizeAffiliateSpread = (locations, clients, exclusiveAffiliateNames, pi
             }
         }
 
+        // ---- PASS C: Full-Affiliate Consolidation ----
+        // For affiliates still in multiple locations, try to move ALL their clients
+        // into a single location with enough total capacity (even one the affiliate isn't in yet)
+        const affiliateLocMap2 = {};
+        locations.forEach(loc => {
+            loc.allocations.forEach(alloc => {
+                if (!affiliateLocMap2[alloc.affiliate]) affiliateLocMap2[alloc.affiliate] = {};
+                if (!affiliateLocMap2[alloc.affiliate][loc.id]) affiliateLocMap2[alloc.affiliate][loc.id] = [];
+                affiliateLocMap2[alloc.affiliate][loc.id].push(alloc);
+            });
+        });
+
+        for (const [affName, locMap] of Object.entries(affiliateLocMap2)) {
+            if (exclusiveAffiliateNames.includes(affName)) continue;
+            const affLocIds = Object.keys(locMap);
+            if (affLocIds.length <= 1) continue; // Already in 1 location
+
+            // Calculate total units for this affiliate
+            const allAffAllocs = affLocIds.flatMap(lid => locMap[lid]);
+            const totalUnits = allAffAllocs.reduce((s, a) => s + a.amount, 0);
+
+            // Check if any of the allocs are pinned — if so, we can only consolidate to the pinned location
+            const pinnedAllocs = allAffAllocs.filter(a => pinnedClientNames.has(a.clientName));
+            const unpinnedAllocs = allAffAllocs.filter(a => !pinnedClientNames.has(a.clientName));
+            if (unpinnedAllocs.length === 0) continue; // All pinned, can't move
+
+            // If there are pinned clients, only try consolidating to pinned locations
+            let candidateLocs;
+            if (pinnedAllocs.length > 0) {
+                const pinnedLocIds = new Set();
+                pinnedAllocs.forEach(a => {
+                    const loc = locations.find(l => l.allocations.includes(a));
+                    if (loc) pinnedLocIds.add(loc.id);
+                });
+                candidateLocs = locations.filter(l => pinnedLocIds.has(l.id));
+            } else {
+                // Try all locations (including ones the affiliate isn't in yet)
+                candidateLocs = locations.filter(l => {
+                    if (l.exclusiveOwners && l.exclusiveOwners.size > 0 && !l.exclusiveOwners.has(affName)) return false;
+                    return true;
+                });
+            }
+
+            // Sort candidates by preference: locations with existing affiliate presence first, then by available capacity
+            candidateLocs.sort((a, b) => {
+                const aHas = a.affiliatesHosted.has(affName) ? 1 : 0;
+                const bHas = b.affiliatesHosted.has(affName) ? 1 : 0;
+                if (aHas !== bHas) return bHas - aHas;
+                return b.remainingCapacity - a.remainingCapacity;
+            });
+
+            for (const targetLoc of candidateLocs) {
+                // Calculate how much capacity we'd need: total units minus what's already at this location
+                const alreadyAtTarget = locMap[targetLoc.id] ? locMap[targetLoc.id].reduce((s, a) => s + a.amount, 0) : 0;
+                const unitsToMove = totalUnits - alreadyAtTarget;
+                if (unitsToMove <= 0) continue; // Everything is already here
+
+                // Check capacity
+                const currentUsed = targetLoc.allocations.reduce((s, a) => s + a.amount, 0);
+                const usedAfterMove = currentUsed + unitsToMove;
+                if (usedAfterMove > targetLoc.originalCapacity) continue;
+
+                // Move all unpinned allocations from other locations to this target
+                const allocsToMove = unpinnedAllocs.filter(a => {
+                    // Only move if this alloc is NOT already at the target
+                    const currentLoc = locations.find(l => l.allocations.includes(a));
+                    return currentLoc && currentLoc.id !== targetLoc.id;
+                });
+
+                if (allocsToMove.length === 0) continue;
+
+                let moveSucceeded = true;
+                for (const alloc of allocsToMove) {
+                    const sourceLoc = locations.find(l => l.allocations.includes(alloc));
+                    if (!sourceLoc) { moveSucceeded = false; break; }
+
+                    sourceLoc.allocations = sourceLoc.allocations.filter(a => a !== alloc);
+                    sourceLoc.remainingCapacity += alloc.amount;
+                    sourceLoc.affiliatesHosted = new Set(sourceLoc.allocations.map(a => a.affiliate));
+
+                    targetLoc.allocations.push(alloc);
+                    targetLoc.remainingCapacity -= alloc.amount;
+                    targetLoc.affiliatesHosted.add(alloc.affiliate);
+
+                    const client = clients.find(c => c.name === alloc.clientName);
+                    if (client) client.locationId = targetLoc.id;
+                }
+
+                if (moveSucceeded) improved = true;
+                break; // Successfully consolidated this affiliate
+            }
+        }
+
         const endScore = getSpreadScore(locations);
         if (!improved || endScore >= startScore) break; // No improvement, stop
     }
+
+    // Post-processing: Deduplicate any clients that ended up in multiple locations
+    // (safety net for consolidation/swapping edge cases)
+    const seenClients = new Set();
+    locations.forEach(loc => {
+        loc.allocations = loc.allocations.filter(alloc => {
+            if (seenClients.has(alloc.clientName)) {
+                // Duplicate! Remove from this location
+                loc.remainingCapacity += alloc.amount;
+                return false;
+            }
+            seenClients.add(alloc.clientName);
+            return true;
+        });
+        loc.affiliatesHosted = new Set(loc.allocations.map(a => a.affiliate));
+    });
 
     return { locations, clients };
 };
@@ -153,13 +268,23 @@ export const allocateBatteries = (inputClients, inputLocations, exclusiveAffilia
 
     // Deduplicate input clients by name to prevent "ghost" duplicates from data sources
     // This resolves the issue where a client appears in multiple locations due to duplicate CSV rows
+    // Deduplicate input clients by name to prevent "ghost" duplicates from data sources
     const uniqueClientsMap = new Map();
+    // Helper to normalize names for deduplication (trim spaces, handle case potentially?)
+    // For now, just trim to avoid "Thomas Blaszak" vs "Thomas Blaszak " issues
+    const normalizeName = (name) => name ? name.trim() : '';
+
     inputClients.forEach(c => {
-        if (!uniqueClientsMap.has(c.name)) {
-            uniqueClientsMap.set(c.name, c);
+        const normalized = normalizeName(c.name);
+        if (!uniqueClientsMap.has(normalized)) {
+            // Use the first occurrence as the canonical one
+            uniqueClientsMap.set(normalized, { ...c, name: normalized });
         }
     });
     const uniqueInputClients = Array.from(uniqueClientsMap.values());
+
+    let bestResult = null;
+    let fewestUnallocated = Infinity;
 
     while (retryCount <= MAX_RETRIES) {
         // Deep copy fresh state each attempt
@@ -186,7 +311,8 @@ export const allocateBatteries = (inputClients, inputLocations, exclusiveAffilia
         // 1a. Place pinned clients first (they override everything)
         if (pinnedAllocations.length > 0) {
             pinnedAllocations.forEach(pin => {
-                const client = clients.find(c => c.name === pin.clientName);
+                const normalizedPinName = normalizeName(pin.clientName);
+                const client = clients.find(c => c.name === normalizedPinName);
                 const location = locations.find(l => l.id === pin.locationId);
 
                 // Safety check: Don't allocate if already allocated (prevents duplicate pins issue)
@@ -400,13 +526,6 @@ export const allocateBatteries = (inputClients, inputLocations, exclusiveAffilia
                     // Location is exclusive -> only owners can play
                     return loc.exclusiveOwners.has(client.affiliate);
                 } else if (isExclusive) {
-                    // Location is free, but client is exclusive -> prefer empty or owned by self?
-                    // Actually, if it's free, can we take it? Yes.
-                    // But if it has others?
-                    // If isExclusive, we should only go to:
-                    // 1. Locations we own
-                    // 2. Locations that are empty (and we become owner)
-                    // 3. Locations that allow mixed? (No, exclusive means exclusive)
                     return loc.allocations.length === 0;
                 }
 
@@ -434,6 +553,13 @@ export const allocateBatteries = (inputClients, inputLocations, exclusiveAffilia
 
         // Check if everyone is placed
         const finalUnallocated = clients.filter(c => !c.allocated);
+
+        // Track best result (fewest unallocated)
+        if (finalUnallocated.length < fewestUnallocated) {
+            fewestUnallocated = finalUnallocated.length;
+            bestResult = { locations, clients };
+        }
+
         if (finalUnallocated.length === 0) {
             return optimizeAffiliateSpread(locations, clients, exclusiveAffiliateNames, pinnedClientNames);
         }
@@ -444,31 +570,14 @@ export const allocateBatteries = (inputClients, inputLocations, exclusiveAffilia
         console.warn(`Retry ${retryCount}: ${finalUnallocated.length} clients unplaced. Relaxing target by +${(capacityBoost * 100).toFixed(0)}%`);
     }
 
-    // If we exhausted retries, return best effort
-    console.warn("Max retries reached. Returning best effort allocation.");
-    let clients = JSON.parse(JSON.stringify(uniqueInputClients));
-    // Reset locations for final greedy pass, but we lose exclusive constraints...
-    // Actually, for the "best effort" fallback, we should just fill holes.
-    // Simplifying: Just return what we had or do a simple greedy fill without exclusivity constraints to avoid crash?
-    // Let's stick to simple greedy if all else fails, confusing but at least allocates.
-    // Re-mapped instructions simplify this:
-    let locations = JSON.parse(JSON.stringify(inputLocations)).map(l => ({
-        ...l, allocations: [], originalCapacity: l.capacity, effectiveCapacity: l.capacity,
-        remainingCapacity: l.capacity, affiliatesHosted: new Set(), exclusiveOwners: new Set()
-    }));
-    // One final full-capacity greedy pass
-    clients.sort((a, b) => b.batteries - a.batteries);
-    for (let client of clients) {
-        const loc = locations.filter(l => l.remainingCapacity >= client.batteries).sort((a, b) => a.remainingCapacity - b.remainingCapacity)[0];
-        if (loc) {
-            loc.allocations.push({ clientId: client.id, clientName: client.name, amount: client.batteries, affiliate: client.affiliate });
-            loc.remainingCapacity -= client.batteries;
-            loc.affiliatesHosted.add(client.affiliate);
-            client.allocated = true;
-            client.locationId = loc.id;
-        }
+    // If we exhausted retries, return the BEST result that still respects pins & exclusivity.
+    // Some clients may remain unallocated — that's better than violating constraints.
+    console.warn(`Max retries reached. Returning best-effort allocation (${fewestUnallocated} clients unallocated).`);
+    if (bestResult) {
+        return optimizeAffiliateSpread(bestResult.locations, bestResult.clients, exclusiveAffiliateNames, pinnedClientNames);
     }
-    return optimizeAffiliateSpread(locations, clients, exclusiveAffiliateNames, pinnedClientNames);
+    // Should never reach here, but just in case
+    return { locations: [], clients: [] };
 };
 
 export const adjustClientCounts = (clients, target = 18681) => {

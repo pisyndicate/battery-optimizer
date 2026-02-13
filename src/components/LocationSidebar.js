@@ -1,6 +1,14 @@
 import React, { useState } from 'react';
 
-const LocationSidebar = ({ location, onClose }) => {
+const LocationSidebar = ({ location, onClose, pinnedAllocations = [], setPinnedAllocations }) => {
+    const isPinned = (clientName) => pinnedAllocations.some(p => p.clientName === clientName && p.locationId === location.id);
+    const togglePin = (clientName) => {
+        if (isPinned(clientName)) {
+            setPinnedAllocations(prev => prev.filter(p => !(p.clientName === clientName && p.locationId === location.id)));
+        } else {
+            setPinnedAllocations(prev => [...prev.filter(p => p.clientName !== clientName), { clientName, locationId: location.id }]);
+        }
+    };
     const [selectedClients, setSelectedClients] = useState(new Set());
     const [collapsedGroups, setCollapsedGroups] = useState(new Set());
 
@@ -91,12 +99,20 @@ const LocationSidebar = ({ location, onClose }) => {
                     <span>Used:</span>
                     <strong>{(location.capacity - location.remainingCapacity).toLocaleString()}</strong>
                 </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
                     <span>Remaining:</span>
                     <strong style={{ color: location.remainingCapacity >= 0 ? '#28a745' : '#dc3545' }}>
                         {location.remainingCapacity.toLocaleString()}
                     </strong>
                 </div>
+                {pinnedAllocations.filter(p => p.locationId === location.id).length > 0 && (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid #dee2e6', paddingTop: '8px' }}>
+                        <span>📌 Pinned:</span>
+                        <strong style={{ color: '#6366f1' }}>
+                            {pinnedAllocations.filter(p => p.locationId === location.id).length} clients
+                        </strong>
+                    </div>
+                )}
             </div>
 
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
@@ -196,9 +212,28 @@ const LocationSidebar = ({ location, onClose }) => {
                                                 checked={selectedClients.has(c.name)}
                                                 onChange={() => toggleSelection(c.name)}
                                             />
-                                            <div style={{ flex: 1, display: 'flex', justifyContent: 'space-between', fontSize: '0.9em' }}>
+                                            <div style={{ flex: 1, display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.9em' }}>
                                                 <span>{c.name}</span>
-                                                <span style={{ color: '#666' }}>{c.batteries}</span>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                                    <span style={{ color: '#666' }}>{c.batteries}</span>
+                                                    <button
+                                                        onClick={(e) => { e.stopPropagation(); togglePin(c.name); }}
+                                                        title={isPinned(c.name) ? 'Unpin from this location' : 'Pin to this location'}
+                                                        style={{
+                                                            background: 'none',
+                                                            border: 'none',
+                                                            cursor: 'pointer',
+                                                            padding: '2px',
+                                                            fontSize: '0.85em',
+                                                            opacity: isPinned(c.name) ? 1 : 0.3,
+                                                            transition: 'opacity 0.15s'
+                                                        }}
+                                                        onMouseEnter={e => { if (!isPinned(c.name)) e.currentTarget.style.opacity = '0.7'; }}
+                                                        onMouseLeave={e => { if (!isPinned(c.name)) e.currentTarget.style.opacity = '0.3'; }}
+                                                    >
+                                                        📌
+                                                    </button>
+                                                </div>
                                             </div>
                                         </li>
                                     ))}

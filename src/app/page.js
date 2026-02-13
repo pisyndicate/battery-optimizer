@@ -79,12 +79,13 @@ export default function Home() {
         const targetLoc = locations.find(l => l.id === targetLocId);
         if (!targetLoc) return;
 
-        const allocatedLoc = allocatedLocations.find(l => l.id === targetLocId);
-        // Use effectiveCapacity if available (from optimizer), else fallback to raw utilization calc
-        const capacityLimit = allocatedLoc ? (allocatedLoc.effectiveCapacity || allocatedLoc.capacity) : Math.floor(targetLoc.capacity * (targetUtilization / 100));
+        // Use the RAW location capacity (not current remaining), since the optimizer
+        // will re-run from scratch with pins taking priority over everything else.
+        const capacityLimit = Math.floor(targetLoc.capacity * (targetUtilization / 100));
 
+        // Only count OTHER pins already assigned to this location (not the ones we're about to add)
         const existingPins = pinnedAllocations.filter(p => p.locationId === targetLocId && !clientNames.includes(p.clientName));
-        const existingLoad = existingPins.reduce((sum, p) => {
+        const existingPinLoad = existingPins.reduce((sum, p) => {
             const c = clients.find(cl => cl.name === p.clientName);
             return sum + (c ? c.batteries : 0);
         }, 0);
@@ -92,16 +93,17 @@ export default function Home() {
         const newLoadClients = clientNames.map(name => clients.find(c => c.name === name)).filter(Boolean);
         const newLoad = newLoadClients.reduce((sum, c) => sum + c.batteries, 0);
 
-        if (existingLoad + newLoad > capacityLimit) {
+        if (existingPinLoad + newLoad > capacityLimit) {
+            // Only show overflow if total pinned load exceeds raw capacity
             setOverflowState({
                 primaryLocation: {
                     ...targetLoc,
-                    currentUsage: existingLoad,
+                    currentUsage: existingPinLoad,
                     totalCapacity: targetLoc.capacity,
                     capacityToUse: capacityLimit
                 },
                 overflowClients: newLoadClients,
-                existingPinsCount: existingLoad
+                existingPinsCount: existingPinLoad
             });
         } else {
             setPinnedAllocations(prev => {
@@ -275,13 +277,16 @@ export default function Home() {
                     exclusiveAffiliates={exclusiveAffiliates}
                     toggleExclusive={toggleExclusive}
                     clients={clients}
-                    locations={locations}
+                    locations={allocatedLocations}
                     pinnedAllocations={pinnedAllocations}
                     setPinnedAllocations={setPinnedAllocations}
                     onDataUpload={(data) => setCustomData(prev => ({ ...prev, ...data }))}
                     onReset={() => {
-                        if (confirm('Reset to default data?')) {
+                        if (confirm('Reset to default data?\n\nThis will also clear all pinned clients and exclusive affiliate settings.')) {
                             setCustomData(null);
+                            setPinnedAllocations([]);
+                            setExclusiveAffiliates([]);
+                            setRunId(prev => prev + 1);
                             showToast('Application reset to default data', 'info');
                         }
                     }}
@@ -313,142 +318,152 @@ export default function Home() {
                         useAdjustedCounts
                     })}
                     onMasterReset={handleMasterReset}
+                    onClearCustomizations={() => {
+                        setPinnedAllocations([]);
+                        setExclusiveAffiliates([]);
+                        setRunId(prev => prev + 1);
+                        showToast('Cleared all pins and exclusive affiliates', 'info');
+                    }}
                 />
             }
             headerContent={headerContent}
         >
-            {/* Top Stats & View Switcher */}
-            <div style={{ marginBottom: '24px', display: 'flex', gap: '24px', alignItems: 'flex-start', flexWrap: 'wrap' }}>
-                <div style={{ flex: 1 }}>
-                    <ValidationStats
-                        locations={allocatedLocations}
-                        totalClients={clients.length}
-                        unallocatedList={unallocatedClients}
-                    />
-                </div>
-                <div style={{
-                    backgroundColor: 'var(--color-surface)',
-                    padding: '4px',
-                    borderRadius: '8px',
-                    border: '1px solid var(--color-border)',
-                    display: 'flex',
-                    gap: '4px',
-                    height: 'fit-content'
-                }}>
-                    <button
-                        onClick={() => setViewMode('locations')}
-                        className="btn"
-                        style={{
-                            backgroundColor: viewMode === 'locations' ? '#eff6ff' : 'transparent',
-                            color: viewMode === 'locations' ? 'var(--color-primary)' : 'var(--color-text-secondary)',
-                            fontWeight: '600',
-                            fontSize: '0.875rem',
-                            border: 'none'
-                        }}
-                    >
-                        Locations
-                    </button>
-                    <button
-                        onClick={() => setViewMode('affiliates')}
-                        className="btn"
-                        style={{
-                            backgroundColor: viewMode === 'affiliates' ? '#eff6ff' : 'transparent',
-                            color: viewMode === 'affiliates' ? 'var(--color-primary)' : 'var(--color-text-secondary)',
-                            fontWeight: '600',
-                            fontSize: '0.875rem',
-                            border: 'none'
-                        }}
-                    >
-                        Affiliates
-                    </button>
-                </div>
-            </div>
-
-            {/* Blank state when no data is loaded */}
-            {locations.length === 0 && clients.length === 0 ? (
-                <div style={{
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    padding: '80px 40px',
-                    textAlign: 'center'
-                }}>
-                    <div style={{ fontSize: '3rem', marginBottom: '16px' }}>📦</div>
-                    <h2 style={{ margin: '0 0 8px 0', fontSize: '1.5rem', color: 'var(--color-text-primary)' }}>
-                        No Project Loaded
-                    </h2>
-                    <p style={{ margin: '0 0 24px 0', color: 'var(--color-text-secondary)', maxWidth: '400px', lineHeight: '1.6' }}>
-                        Open a saved project from the sidebar, or upload location and client CSV files to get started.
-                    </p>
-                    <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', justifyContent: 'center' }}>
-                        <div style={{
-                            padding: '12px 20px',
-                            backgroundColor: 'var(--color-surface)',
-                            border: '1px solid var(--color-border)',
-                            borderRadius: '8px',
-                            fontSize: '0.85rem',
-                            color: 'var(--color-text-secondary)'
-                        }}>
-                            💾 <strong>Open a project</strong> from the sidebar
-                        </div>
-                        <div style={{
-                            padding: '12px 20px',
-                            backgroundColor: 'var(--color-surface)',
-                            border: '1px solid var(--color-border)',
-                            borderRadius: '8px',
-                            fontSize: '0.85rem',
-                            color: 'var(--color-text-secondary)'
-                        }}>
-                            📁 <strong>Upload CSVs</strong> via Data Management
-                        </div>
+            <div style={{ marginRight: (selectedLocation || selectedAffiliate) ? '416px' : '0', transition: 'margin-right 0.3s ease' }}>
+                {/* Top Stats & View Switcher */}
+                <div style={{ marginBottom: '24px', display: 'flex', gap: '24px', alignItems: 'flex-start', flexWrap: 'wrap' }}>
+                    <div style={{ flex: 1 }}>
+                        <ValidationStats
+                            locations={allocatedLocations}
+                            totalClients={clients.length}
+                            unallocatedList={unallocatedClients}
+                        />
+                    </div>
+                    <div style={{
+                        backgroundColor: 'var(--color-surface)',
+                        padding: '4px',
+                        borderRadius: '8px',
+                        border: '1px solid var(--color-border)',
+                        display: 'flex',
+                        gap: '4px',
+                        height: 'fit-content'
+                    }}>
+                        <button
+                            onClick={() => setViewMode('locations')}
+                            className="btn"
+                            style={{
+                                backgroundColor: viewMode === 'locations' ? '#eff6ff' : 'transparent',
+                                color: viewMode === 'locations' ? 'var(--color-primary)' : 'var(--color-text-secondary)',
+                                fontWeight: '600',
+                                fontSize: '0.875rem',
+                                border: 'none'
+                            }}
+                        >
+                            Locations
+                        </button>
+                        <button
+                            onClick={() => setViewMode('affiliates')}
+                            className="btn"
+                            style={{
+                                backgroundColor: viewMode === 'affiliates' ? '#eff6ff' : 'transparent',
+                                color: viewMode === 'affiliates' ? 'var(--color-primary)' : 'var(--color-text-secondary)',
+                                fontWeight: '600',
+                                fontSize: '0.875rem',
+                                border: 'none'
+                            }}
+                        >
+                            Affiliates
+                        </button>
                     </div>
                 </div>
-            ) : (
-                <>
 
-                    {/* Main Grid */}
-                    {viewMode === 'locations' ? (
-                        <div style={{
-                            display: 'grid',
-                            gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))',
-                            gap: '20px',
-                            paddingBottom: '40px'
-                        }}>
-                            {filteredLocations.length === 0 && (
-                                <div style={{ gridColumn: '1/-1', textAlign: 'center', padding: '40px', color: '#64748b' }}>
-                                    No locations found matching "{globalSearch}"
-                                </div>
-                            )}
-                            {filteredLocations.map(loc => (
-                                <LocationCard
-                                    key={loc.id}
-                                    location={loc}
-                                    onDropClients={(locId, clientNames) => {
-                                        // Reusing handlePinClients logic but wrapped for drop interface
-                                        handlePinClients(clientNames, locId);
-                                    }}
-                                    onCardClick={() => setSelectedLocation(loc)}
+                {/* Blank state when no data is loaded */}
+                {locations.length === 0 && clients.length === 0 ? (
+                    <div style={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        padding: '80px 40px',
+                        textAlign: 'center'
+                    }}>
+                        <div style={{ fontSize: '3rem', marginBottom: '16px' }}>📦</div>
+                        <h2 style={{ margin: '0 0 8px 0', fontSize: '1.5rem', color: 'var(--color-text-primary)' }}>
+                            No Project Loaded
+                        </h2>
+                        <p style={{ margin: '0 0 24px 0', color: 'var(--color-text-secondary)', maxWidth: '400px', lineHeight: '1.6' }}>
+                            Open a saved project from the sidebar, or upload location and client CSV files to get started.
+                        </p>
+                        <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', justifyContent: 'center' }}>
+                            <div style={{
+                                padding: '12px 20px',
+                                backgroundColor: 'var(--color-surface)',
+                                border: '1px solid var(--color-border)',
+                                borderRadius: '8px',
+                                fontSize: '0.85rem',
+                                color: 'var(--color-text-secondary)'
+                            }}>
+                                💾 <strong>Open a project</strong> from the sidebar
+                            </div>
+                            <div style={{
+                                padding: '12px 20px',
+                                backgroundColor: 'var(--color-surface)',
+                                border: '1px solid var(--color-border)',
+                                borderRadius: '8px',
+                                fontSize: '0.85rem',
+                                color: 'var(--color-text-secondary)'
+                            }}>
+                                📁 <strong>Upload CSVs</strong> via Data Management
+                            </div>
+                        </div>
+                    </div>
+                ) : (
+                    <>
+
+                        {/* Main Grid */}
+                        {viewMode === 'locations' ? (
+                            <div style={{
+                                display: 'grid',
+                                gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))',
+                                gap: '20px',
+                                paddingBottom: '40px'
+                            }}>
+                                {filteredLocations.length === 0 && (
+                                    <div style={{ gridColumn: '1/-1', textAlign: 'center', padding: '40px', color: '#64748b' }}>
+                                        No locations found matching "{globalSearch}"
+                                    </div>
+                                )}
+                                {filteredLocations.map(loc => (
+                                    <LocationCard
+                                        key={loc.id}
+                                        location={loc}
+                                        onDropClients={(locId, clientNames) => {
+                                            // Reusing handlePinClients logic but wrapped for drop interface
+                                            handlePinClients(clientNames, locId);
+                                        }}
+                                        onCardClick={() => setSelectedLocation(loc)}
+                                    />
+                                ))}
+                            </div>
+                        ) : (
+                            <div style={{ paddingBottom: '40px' }}>
+                                <AffiliateSummary locations={filteredLocations} />
+                                <AffiliateAllocations
+                                    locations={filteredLocations}
+                                    onAffiliateClick={setSelectedAffiliate}
                                 />
-                            ))}
-                        </div>
-                    ) : (
-                        <div style={{ paddingBottom: '40px' }}>
-                            <AffiliateSummary locations={filteredLocations} />
-                            <AffiliateAllocations
-                                locations={filteredLocations}
-                                onAffiliateClick={setSelectedAffiliate}
-                            />
-                        </div>
-                    )}
-                </>
-            )}
+                            </div>
+                        )}
+                    </>
+                )}
+            </div>
 
             {/* Overlays */}
             {selectedLocation && (
                 <LocationSidebar
                     location={selectedLocation}
                     onClose={() => setSelectedLocation(null)}
+                    pinnedAllocations={pinnedAllocations}
+                    setPinnedAllocations={setPinnedAllocations}
                 />
             )}
 

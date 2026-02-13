@@ -21,7 +21,7 @@ const ValidationStats = ({ locations, totalClients, unallocatedList = [] }) => {
         clientMap[a.clientId].locations.push(a.locationName);
     });
 
-    const allocatedClientCount = Object.keys(clientMap).length;
+    const allocatedClientCount = totalClients - unallocatedList.length;
 
     // Only count as "split" if they are in more than 1 UNIQUE location
     const splitClientList = Object.values(clientMap).filter(c => {

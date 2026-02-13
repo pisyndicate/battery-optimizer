@@ -38,11 +38,11 @@ const DashboardLayout = ({
                     </div>
                 </div>
 
-                <div style={{ flex: 1, overflowY: 'auto', padding: '16px' }}>
+                <div style={{ flex: 1, overflow: 'hidden', padding: '16px', display: 'flex', flexDirection: 'column' }}>
                     {sidebarContent}
                 </div>
 
-                <div style={{ padding: '16px', borderTop: '1px solid rgba(255,255,255,0.1)', fontSize: '0.75rem', color: '#94a3b8', textAlign: 'center' }}>
+                <div style={{ padding: '6px 16px', borderTop: '1px solid rgba(255,255,255,0.06)', fontSize: '0.68rem', color: '#475569', textAlign: 'center' }}>
                     v2.0.1
                 </div>
             </aside>
