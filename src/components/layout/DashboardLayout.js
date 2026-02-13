@@ -43,7 +43,7 @@ const DashboardLayout = ({
                 </div>
 
                 <div style={{ padding: '16px', borderTop: '1px solid rgba(255,255,255,0.1)', fontSize: '0.75rem', color: '#94a3b8', textAlign: 'center' }}>
-                    v2.0.0
+                    v2.0.1
                 </div>
             </aside>
 
