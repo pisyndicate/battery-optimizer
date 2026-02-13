@@ -1,6 +1,6 @@
 import React from 'react';
 
-const AffiliateAllocations = ({ locations }) => {
+const AffiliateAllocations = ({ locations, onAffiliateClick }) => {
     // 1. Aggregate Data
     const affiliateData = locations.reduce((acc, loc) => {
         loc.allocations.forEach(alloc => {
@@ -9,7 +9,7 @@ const AffiliateAllocations = ({ locations }) => {
                     name: alloc.affiliate,
                     totalBatteries: 0,
                     totalClients: 0,
-                    locations: {} // { locationId: { name, batteries, count } }
+                    locations: {} // { locationId: { name, batteries, count, clients: [] } }
                 };
             }
 
@@ -18,10 +18,11 @@ const AffiliateAllocations = ({ locations }) => {
             aff.totalClients += 1;
 
             if (!aff.locations[loc.id]) {
-                aff.locations[loc.id] = { name: loc.name, batteries: 0, count: 0 };
+                aff.locations[loc.id] = { name: loc.name, batteries: 0, count: 0, clients: [] };
             }
             aff.locations[loc.id].batteries += alloc.amount;
             aff.locations[loc.id].count += 1;
+            aff.locations[loc.id].clients.push(alloc);
         });
         return acc;
     }, {});
@@ -31,7 +32,27 @@ const AffiliateAllocations = ({ locations }) => {
     return (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(350px, 1fr))', gap: '16px' }}>
             {sortedAffiliates.map(aff => (
-                <div key={aff.name} style={{ border: '1px solid #dee2e6', borderRadius: '8px', padding: '16px', backgroundColor: '#fff', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
+                <div
+                    key={aff.name}
+                    onClick={() => onAffiliateClick && onAffiliateClick(aff)}
+                    style={{
+                        border: '1px solid #dee2e6',
+                        borderRadius: '8px',
+                        padding: '16px',
+                        backgroundColor: '#fff',
+                        boxShadow: '0 2px 4px rgba(0,0,0,0.05)',
+                        cursor: 'pointer',
+                        transition: 'transform 0.2s, box-shadow 0.2s'
+                    }}
+                    onMouseEnter={(e) => {
+                        e.currentTarget.style.transform = 'translateY(-2px)';
+                        e.currentTarget.style.boxShadow = '0 4px 8px rgba(0,0,0,0.1)';
+                    }}
+                    onMouseLeave={(e) => {
+                        e.currentTarget.style.transform = 'translateY(0)';
+                        e.currentTarget.style.boxShadow = '0 2px 4px rgba(0,0,0,0.05)';
+                    }}
+                >
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
                         <h3 style={{ margin: 0, fontSize: '1.2rem', color: '#0056b3' }}>{aff.name}</h3>
                         <span style={{ fontSize: '0.9em', fontWeight: 'bold', color: '#495057' }}>{aff.totalBatteries.toLocaleString()}</span>

@@ -5,6 +5,7 @@ import { allocateBatteries, adjustClientCounts } from '@/lib/optimizer';
 import LocationCard from '@/components/LocationCard';
 import ValidationStats from '@/components/ValidationStats';
 import LocationSidebar from '@/components/LocationSidebar';
+import AffiliateSidebar from '@/components/AffiliateSidebar';
 import PinnedAllocationsList from '@/components/PinnedAllocationsList';
 import AffiliateAllocations from '@/components/AffiliateAllocations';
 
@@ -12,6 +13,7 @@ import DataManagement from '@/components/DataManagement';
 
 export default function Home() {
     const [selectedLocation, setSelectedLocation] = useState(null);
+    const [selectedAffiliate, setSelectedAffiliate] = useState(null);
     const [viewMode, setViewMode] = useState('locations'); // 'locations' | 'affiliates'
     const [useAdjustedCounts, setUseAdjustedCounts] = useState(false);
     const [exclusiveAffiliates, setExclusiveAffiliates] = useState([]); // Array of strings e.g. ["Brown and Sterling"]
@@ -593,7 +595,10 @@ export default function Home() {
                         ))}
                     </div>
                 ) : (
-                    <AffiliateAllocations locations={allocatedLocations} />
+                    <AffiliateAllocations
+                        locations={allocatedLocations}
+                        onAffiliateClick={setSelectedAffiliate}
+                    />
                 )}
             </section>
 
@@ -601,6 +606,13 @@ export default function Home() {
                 <LocationSidebar
                     location={selectedLocation}
                     onClose={() => setSelectedLocation(null)}
+                />
+            )}
+
+            {selectedAffiliate && (
+                <AffiliateSidebar
+                    affiliate={selectedAffiliate}
+                    onClose={() => setSelectedAffiliate(null)}
                 />
             )}
         </main>

@@ -2,6 +2,17 @@ import React, { useState } from 'react';
 
 const LocationSidebar = ({ location, onClose }) => {
     const [selectedClients, setSelectedClients] = useState(new Set());
+    const [collapsedGroups, setCollapsedGroups] = useState(new Set());
+
+    const toggleGroup = (affiliate) => {
+        const newSet = new Set(collapsedGroups);
+        if (newSet.has(affiliate)) {
+            newSet.delete(affiliate);
+        } else {
+            newSet.add(affiliate);
+        }
+        setCollapsedGroups(newSet);
+    };
 
     if (!location) return null;
 
@@ -105,10 +116,11 @@ const LocationSidebar = ({ location, onClose }) => {
                     return acc;
                 }, {})).sort((a, b) => a[0].localeCompare(b[0])).map(([affiliate, groupClients]) => {
                     const totalBatteries = groupClients.reduce((sum, c) => sum + c.batteries, 0);
+                    const isCollapsed = collapsedGroups.has(affiliate);
 
                     return (
                         <div key={affiliate} style={{ marginBottom: '16px', border: '1px solid #eee', borderRadius: '8px', overflow: 'hidden' }}>
-                            {/* Affiliate Header - Draggable */}
+                            {/* Affiliate Header - Draggable & Collapsible */}
                             <div
                                 draggable
                                 onDragStart={(e) => {
@@ -116,16 +128,21 @@ const LocationSidebar = ({ location, onClose }) => {
                                     e.dataTransfer.setData('application/json', JSON.stringify({ type: 'CLIENT_DRAG', clients: names }));
                                     e.dataTransfer.effectAllowed = 'copy';
                                 }}
+                                onClick={() => toggleGroup(affiliate)}
                                 style={{
                                     padding: '12px',
                                     backgroundColor: '#e9ecef',
-                                    borderBottom: '1px solid #ddd',
-                                    cursor: 'grab',
+                                    borderBottom: isCollapsed ? 'none' : '1px solid #ddd',
+                                    cursor: 'pointer',
                                     fontWeight: 'bold',
                                     display: 'flex',
-                                    alignItems: 'center'
+                                    alignItems: 'center',
+                                    userSelect: 'none'
                                 }}
                             >
+                                <div style={{ marginRight: '8px', fontSize: '0.8em', transform: isCollapsed ? 'rotate(-90deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }}>
+                                    ▼
+                                </div>
                                 <div style={{ display: 'flex', alignItems: 'center', flex: 1 }}>
                                     <input
                                         type="checkbox"
@@ -137,8 +154,8 @@ const LocationSidebar = ({ location, onClose }) => {
                                                 el.indeterminate = someSelected && !allSelected;
                                             }
                                         }}
-                                        onChange={(e) => {
-                                            e.stopPropagation(); // Prevent drag start
+                                        onClick={(e) => {
+                                            e.stopPropagation(); // Prevent collapse
                                             const allSelected = groupClients.every(c => selectedClients.has(c.name));
                                             const newSet = new Set(selectedClients);
 
@@ -157,34 +174,36 @@ const LocationSidebar = ({ location, onClose }) => {
                             </div>
 
                             {/* Client List */}
-                            <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
-                                {groupClients.map(c => (
-                                    <li
-                                        key={c.id || c.name}
-                                        draggable
-                                        onDragStart={(e) => handleDragStart(e, c)}
-                                        style={{
-                                            padding: '8px 12px',
-                                            borderBottom: '1px solid #f8f9fa',
-                                            backgroundColor: selectedClients.has(c.name) ? '#f0f8ff' : '#fff',
-                                            cursor: 'grab',
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            gap: '12px'
-                                        }}
-                                    >
-                                        <input
-                                            type="checkbox"
-                                            checked={selectedClients.has(c.name)}
-                                            onChange={() => toggleSelection(c.name)}
-                                        />
-                                        <div style={{ flex: 1, display: 'flex', justifyContent: 'space-between', fontSize: '0.9em' }}>
-                                            <span>{c.name}</span>
-                                            <span style={{ color: '#666' }}>{c.batteries}</span>
-                                        </div>
-                                    </li>
-                                ))}
-                            </ul>
+                            {!isCollapsed && (
+                                <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
+                                    {groupClients.map(c => (
+                                        <li
+                                            key={c.id || c.name}
+                                            draggable
+                                            onDragStart={(e) => handleDragStart(e, c)}
+                                            style={{
+                                                padding: '8px 12px',
+                                                borderBottom: '1px solid #f8f9fa',
+                                                backgroundColor: selectedClients.has(c.name) ? '#f0f8ff' : '#fff',
+                                                cursor: 'grab',
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                gap: '12px'
+                                            }}
+                                        >
+                                            <input
+                                                type="checkbox"
+                                                checked={selectedClients.has(c.name)}
+                                                onChange={() => toggleSelection(c.name)}
+                                            />
+                                            <div style={{ flex: 1, display: 'flex', justifyContent: 'space-between', fontSize: '0.9em' }}>
+                                                <span>{c.name}</span>
+                                                <span style={{ color: '#666' }}>{c.batteries}</span>
+                                            </div>
+                                        </li>
+                                    ))}
+                                </ul>
+                            )}
                         </div>
                     );
                 })}
