@@ -10,8 +10,12 @@ const LocationCard = ({ location, onDropClients, onCardClick }) => {
     const capacityToUse = location.effectiveCapacity || location.capacity;
     const isRestricted = location.effectiveCapacity && location.effectiveCapacity < location.originalCapacity;
 
-    const percentFull = (currentTotal / capacityToUse) * 100;
-    const isOver = currentTotal > capacityToUse;
+    const totalCapacity = location.originalCapacity || location.capacity;
+
+    // Calculate percentages relative to the Total Physical Capacity
+    const usagePercentage = (currentTotal / totalCapacity) * 100;
+    const targetPercentage = (capacityToUse / totalCapacity) * 100;
+    const isOverTarget = currentTotal > capacityToUse;
 
     // Group allocations by Affiliate for display
     const byAffiliate = {};
@@ -85,17 +89,37 @@ const LocationCard = ({ location, onDropClients, onCardClick }) => {
                     Remaining: {location.remainingCapacity.toLocaleString()}
                 </div>
                 <div style={{
-                    height: '8px',
-                    backgroundColor: '#eee',
-                    borderRadius: '4px',
+                    height: '12px',
+                    backgroundColor: '#e9ecef',
+                    borderRadius: '6px',
+                    position: 'relative',
                     overflow: 'hidden'
                 }}>
+                    {/* Usage Bar */}
                     <div style={{
-                        width: `${Math.min(percentFull, 100)}%`,
-                        backgroundColor: isOver ? '#dc3545' : percentFull > 100 ? '#ffc107' : '#007bff',
+                        width: `${Math.min(usagePercentage, 100)}%`,
+                        backgroundColor: isOverTarget ? '#dc3545' : '#007bff',
                         height: '100%',
-                        transition: 'width 0.3s ease'
+                        transition: 'width 0.3s ease',
+                        position: 'absolute',
+                        top: 0,
+                        left: 0,
+                        zIndex: 1
                     }} />
+
+                    {/* Target Line Marker */}
+                    {isRestricted && (
+                        <div style={{
+                            position: 'absolute',
+                            left: `${Math.min(targetPercentage, 100)}%`,
+                            top: 0,
+                            bottom: 0,
+                            width: '2px',
+                            backgroundColor: '#dc3545', // Red line
+                            zIndex: 2,
+                            boxShadow: '0 0 2px rgba(0,0,0,0.5)'
+                        }} title={`Target: ${capacityToUse.toLocaleString()}`} />
+                    )}
                 </div>
             </div>
 
