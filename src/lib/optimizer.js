@@ -151,9 +151,19 @@ export const allocateBatteries = (inputClients, inputLocations, exclusiveAffilia
     let capacityBoost = 0; // Progressively relax target on retries
     const pinnedClientNames = new Set(pinnedAllocations.map(p => p.clientName));
 
+    // Deduplicate input clients by name to prevent "ghost" duplicates from data sources
+    // This resolves the issue where a client appears in multiple locations due to duplicate CSV rows
+    const uniqueClientsMap = new Map();
+    inputClients.forEach(c => {
+        if (!uniqueClientsMap.has(c.name)) {
+            uniqueClientsMap.set(c.name, c);
+        }
+    });
+    const uniqueInputClients = Array.from(uniqueClientsMap.values());
+
     while (retryCount <= MAX_RETRIES) {
         // Deep copy fresh state each attempt
-        let clients = JSON.parse(JSON.stringify(inputClients));
+        let clients = JSON.parse(JSON.stringify(uniqueInputClients));
         const limitFactor = Math.min(1, ((100 - toleranceMin) / 100) + capacityBoost);
 
         let locations = JSON.parse(JSON.stringify(inputLocations)).map(l => {
@@ -436,7 +446,7 @@ export const allocateBatteries = (inputClients, inputLocations, exclusiveAffilia
 
     // If we exhausted retries, return best effort
     console.warn("Max retries reached. Returning best effort allocation.");
-    let clients = JSON.parse(JSON.stringify(inputClients));
+    let clients = JSON.parse(JSON.stringify(uniqueInputClients));
     // Reset locations for final greedy pass, but we lose exclusive constraints...
     // Actually, for the "best effort" fallback, we should just fill holes.
     // Simplifying: Just return what we had or do a simple greedy fill without exclusivity constraints to avoid crash?
