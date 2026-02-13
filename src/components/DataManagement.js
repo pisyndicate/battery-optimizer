@@ -450,6 +450,7 @@ const DataManagement = ({ onDataUpload, onReset }) => {
             const ext = file.name.split('.').pop().toLowerCase();
             let headers = [], rows = [], structured = null, type = null;
             let matrix = null;
+            let data = null;
 
             if (ext === 'csv' || ext === 'tsv' || ext === 'txt') {
                 const text = await file.text();
