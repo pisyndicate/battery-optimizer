@@ -34,34 +34,32 @@ function parseCSV(text) {
         return result;
     };
 
-    const headers = parseLine(lines[0]).map(h => h.toLowerCase().trim());
-    const rows = [];
-    for (let i = 1; i < lines.length; i++) {
-        const vals = parseLine(lines[i]);
-        if (vals.length < headers.length) continue;
-        const entry = {};
-        headers.forEach((h, idx) => { entry[h] = vals[idx]; });
-        rows.push(entry);
-    }
-    return { headers, rows };
+    const matrix = lines.map(line => parseLine(line));
+    return { matrix };
 }
 
 function parseExcel(buffer) {
     const wb = XLSX.read(buffer, { type: 'array' });
     const sheetName = wb.SheetNames[0];
     const sheet = wb.Sheets[sheetName];
-    const jsonData = XLSX.utils.sheet_to_json(sheet, { defval: '' });
-    if (jsonData.length === 0) return { headers: [], rows: [] };
+    // get raw array of arrays
+    const rawData = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
+    if (rawData.length === 0) return { matrix: [] };
 
-    const headers = Object.keys(jsonData[0]).map(h => h.toLowerCase().trim());
-    const rows = jsonData.map(row => {
-        const entry = {};
-        Object.entries(row).forEach(([k, v]) => {
-            entry[k.toLowerCase().trim()] = String(v);
-        });
-        return entry;
-    });
-    return { headers, rows };
+    const matrix = rawData.map(row => row.map(cell => String(cell).trim()));
+    return { matrix };
+}
+
+function findHeaderRow(matrix) {
+    for (let i = 0; i < Math.min(matrix.length, 25); i++) {
+        const row = matrix[i];
+        if (!row || row.length === 0 || row.every(c => !c)) continue;
+        try {
+            const type = detectDataType(row, [], null);
+            return { index: i, type, headers: row };
+        } catch (e) { }
+    }
+    return null;
 }
 
 async function parsePDF(buffer) {
@@ -283,17 +281,18 @@ const DataManagement = ({ onDataUpload, onReset }) => {
 
         try {
             const ext = file.name.split('.').pop().toLowerCase();
-            let headers, rows, structured = null;
+            let headers = [], rows = [], structured = null, type = null;
+            let matrix = null;
 
             if (ext === 'csv' || ext === 'tsv' || ext === 'txt') {
                 const text = await file.text();
-                ({ headers, rows } = parseCSV(text));
+                ({ matrix } = parseCSV(text));
             } else if (ext === 'xlsx' || ext === 'xls') {
                 const buffer = await file.arrayBuffer();
-                ({ headers, rows } = parseExcel(buffer));
+                ({ matrix } = parseExcel(buffer));
             } else if (ext === 'pdf') {
                 const buffer = await file.arrayBuffer();
-                ({ headers, rows } = await parsePDF(buffer));
+                ({ matrix } = await parsePDF(buffer));
             } else if (ext === 'json') {
                 const text = await file.text();
                 const result = parseJSON(text);
@@ -304,11 +303,44 @@ const DataManagement = ({ onDataUpload, onReset }) => {
                 throw new Error(`Unsupported format: .${ext}`);
             }
 
-            if (rows.length === 0 && !structured) {
-                throw new Error('No data rows found in the file');
+            // Handle Matrix (CSV/Excel/PDF)
+            if (matrix) {
+                if (matrix.length === 0) throw new Error('No data rows found in the file');
+
+                const res = findHeaderRow(matrix);
+                if (!res) {
+                    // Try to detect on first row just to throw the detailed error
+                    detectDataType(matrix[0].map(String), [], null);
+                    throw new Error('Could not find a valid header row in the first 25 lines.');
+                }
+
+                type = res.type;
+                headers = res.headers;
+                const headerIndex = res.index;
+
+                // Process rows
+                const lowerHeaders = headers.map(h => String(h).toLowerCase().trim());
+                rows = [];
+                for (let i = headerIndex + 1; i < matrix.length; i++) {
+                    const row = matrix[i];
+                    if (!row || row.length === 0 || row.every(c => !c)) continue;
+
+                    const entry = {};
+                    lowerHeaders.forEach((h, colIdx) => {
+                        const val = row[colIdx];
+                        entry[h] = val !== undefined ? String(val).trim() : '';
+                    });
+
+                    // Only add if at least one value is present
+                    if (Object.values(entry).some(v => v)) {
+                        rows.push(entry);
+                    }
+                }
+            } else {
+                // JSON path
+                type = detectDataType(headers, rows, structured);
             }
 
-            const type = detectDataType(headers, rows, structured);
             const data = extractData(type, headers, rows, structured);
 
             setPreview({
@@ -334,10 +366,30 @@ const DataManagement = ({ onDataUpload, onReset }) => {
         setLoading(true);
 
         try {
-            const { headers, rows } = parseCSV(pasteText);
-            if (rows.length === 0) throw new Error('No data rows found in pasted text');
+            const { matrix } = parseCSV(pasteText);
+            if (!matrix || matrix.length === 0) throw new Error('No data rows found in pasted text');
 
-            const type = detectDataType(headers, rows, null);
+            const res = findHeaderRow(matrix);
+            if (!res) {
+                detectDataType(matrix[0].map(String), [], null);
+                throw new Error('Could not find a valid header row in pasted text.');
+            }
+
+            const { type, headers, index } = res;
+            const lowerHeaders = headers.map(h => String(h).toLowerCase().trim());
+
+            const rows = [];
+            for (let i = index + 1; i < matrix.length; i++) {
+                const row = matrix[i];
+                if (!row || row.length === 0) continue;
+                const entry = {};
+                lowerHeaders.forEach((h, colIdx) => {
+                    const val = row[colIdx];
+                    entry[h] = val !== undefined ? String(val).trim() : '';
+                });
+                if (Object.values(entry).some(v => v)) rows.push(entry);
+            }
+
             const data = extractData(type, headers, rows, null);
 
             setPreview({
