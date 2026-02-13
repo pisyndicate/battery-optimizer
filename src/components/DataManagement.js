@@ -134,31 +134,48 @@ function detectDataType(headers, rows, structured) {
         return 'manifest';
     }
 
-    const h = new Set(headers);
-    const hasCapacity = h.has('capacity') || h.has('location capacity');
-    const hasBatteries = h.has('batteries') || h.has('units');
-    const hasAffiliate = h.has('affiliate');
-    const hasLocationName = h.has('location name') || h.has('location');
-    const hasClientName = h.has('client name') || h.has('client');
+    // Normalize headers for fuzzy matching
+    // - Lowercase
+    // - Trim whitespace
+    // - Collapse multiple spaces to single space
+    const h = headers.map(hdr => String(hdr).toLowerCase().trim().replace(/\s+/g, ' '));
 
-    // Combined manifest
-    if ((hasCapacity || hasLocationName) && (hasBatteries || hasAffiliate) && (hasClientName)) {
+    const check = (keyword) => h.some(hdr => hdr.includes(keyword));
+
+    const hasCapacity = check('capacity') || check('cap');
+    const hasBatteries = check('batteries') || check('units') || check('count') || check('qty');
+    const hasAffiliate = check('affiliate') || check('owner') || check('group');
+    const hasLocationName = check('location') || check('site') || check('venue'); // 'location name', 'site name'
+    const hasClientName = check('client') || check('name') || check('customer'); // 'client name', 'customer name'
+    const hasId = check('id') || check('code');
+
+    // Combined manifest (Location + Client columns)
+    // Needs to be checked first as it often contains subset keywords
+    if (hasLocationName && (hasClientName || hasAffiliate || hasBatteries)) {
         return 'manifest';
     }
-    // Clients
-    if ((hasBatteries || hasAffiliate) && h.has('name')) {
+
+    // Clients file (Client Name + Batteries/Affiliate)
+    if (hasClientName && (hasBatteries || hasAffiliate)) {
         return 'clients';
     }
-    // Locations
-    if (hasCapacity && (h.has('name') || h.has('id'))) {
+
+    // Locations file (Name/ID + Capacity)
+    if (hasCapacity && (hasLocationName || hasId)) {
         return 'locations';
     }
-    // Manifest if has both location and client columns
+
+    // Fallback: if we have "Location" and "Client" explicitly
     if (hasLocationName && hasClientName) {
         return 'manifest';
     }
 
-    return 'unknown';
+    // If we only found 1 header and it's very long, maybe CSV parsing failed?
+    if (headers.length === 1 && headers[0].length > 50) {
+        throw new Error(`Could not parse columns. The file might not be tab/comma separated correctly. Found raw header: "${headers[0].substring(0, 50)}..."`);
+    }
+
+    throw new Error(`Could not determine data type. Found headers: [${headers.join(', ')}]`);
 }
 
 function parseNum(val) {
