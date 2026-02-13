@@ -136,6 +136,58 @@ export default function Home() {
         }
     };
 
+    const handleSaveProject = () => {
+        const projectState = {
+            timestamp: new Date().toISOString(),
+            customData,
+            pinnedAllocations,
+            exclusiveAffiliates,
+            targetUtilization,
+            useAdjustedCounts,
+            globalSearch
+        };
+
+        const jsonContent = JSON.stringify(projectState, null, 2);
+        const blob = new Blob([jsonContent], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.setAttribute('href', url);
+        link.setAttribute('download', `battery_project_${new Date().toISOString().slice(0, 10)}.json`);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        showToast("Project saved successfully!", "success");
+    };
+
+    const handleLoadProject = (event) => {
+        const file = event.target.files[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            try {
+                const state = JSON.parse(e.target.result);
+
+                // Validate/Restore state
+                if (state.customData) setCustomData(state.customData);
+                if (state.pinnedAllocations) setPinnedAllocations(state.pinnedAllocations);
+                if (state.exclusiveAffiliates) setExclusiveAffiliates(state.exclusiveAffiliates);
+                if (state.targetUtilization) setTargetUtilization(state.targetUtilization);
+                if (state.useAdjustedCounts !== undefined) setUseAdjustedCounts(state.useAdjustedCounts);
+                if (state.globalSearch) setGlobalSearch(state.globalSearch);
+
+                setRunId(prev => prev + 1); // Trigger re-render
+                showToast("Project loaded successfully!", "success");
+            } catch (err) {
+                console.error("Failed to load project:", err);
+                showToast("Invalid project file", "error");
+            }
+        };
+        reader.readAsText(file);
+        // Reset input value to allow same file selection again
+        event.target.value = '';
+    };
+
     const { locations: allocatedLocations, clients: processedClients } = useMemo(() => {
         const effectiveTolerance = Math.max(0, 100 - targetUtilization);
         return allocateBatteries(
@@ -247,6 +299,46 @@ export default function Home() {
             </div>
 
             <div style={{ display: 'flex', gap: '12px' }}>
+                <input
+                    type="file"
+                    id="project-upload"
+                    accept=".json"
+                    style={{ display: 'none' }}
+                    onChange={handleLoadProject}
+                />
+                <button
+                    onClick={() => document.getElementById('project-upload').click()}
+                    className="btn"
+                    style={{
+                        display: 'flex',
+                        gap: '8px',
+                        backgroundColor: 'var(--color-surface)',
+                        color: 'var(--color-text-primary)',
+                        border: '1px solid var(--color-border)',
+                        fontWeight: '600'
+                    }}
+                    title="Load Project File"
+                >
+                    <span>📂</span> Load
+                </button>
+                <button
+                    onClick={handleSaveProject}
+                    className="btn"
+                    style={{
+                        display: 'flex',
+                        gap: '8px',
+                        backgroundColor: 'var(--color-surface)',
+                        color: 'var(--color-text-primary)',
+                        border: '1px solid var(--color-border)',
+                        fontWeight: '600'
+                    }}
+                    title="Save Project File"
+                >
+                    <span>💾</span> Save
+                </button>
+
+                <div style={{ width: '1px', backgroundColor: '#cbd5e1', margin: '0 4px' }}></div>
+
                 <button
                     onClick={handleMasterReset}
                     className="btn"
@@ -391,27 +483,22 @@ export default function Home() {
                         onAffiliateClick={setSelectedAffiliate}
                     />
                 </div>
-            )
-            }
+            )}
 
             {/* Overlays */}
-            {
-                selectedLocation && (
-                    <LocationSidebar
-                        location={selectedLocation}
-                        onClose={() => setSelectedLocation(null)}
-                    />
-                )
-            }
+            {selectedLocation && (
+                <LocationSidebar
+                    location={selectedLocation}
+                    onClose={() => setSelectedLocation(null)}
+                />
+            )}
 
-            {
-                selectedAffiliate && (
-                    <AffiliateSidebar
-                        affiliate={selectedAffiliate}
-                        onClose={() => setSelectedAffiliate(null)}
-                    />
-                )
-            }
+            {selectedAffiliate && (
+                <AffiliateSidebar
+                    affiliate={selectedAffiliate}
+                    onClose={() => setSelectedAffiliate(null)}
+                />
+            )}
 
             <OverflowModal
                 isOpen={!!overflowState}
@@ -422,6 +509,6 @@ export default function Home() {
                 onConfirmSplit={handleConfirmSplit}
                 onForcePrimary={handleForcePrimary}
             />
-        </DashboardLayout >
+        </DashboardLayout>
     );
 }
