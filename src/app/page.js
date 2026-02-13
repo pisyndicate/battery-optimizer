@@ -286,7 +286,7 @@ export default function Home() {
                                             }}
                                             style={{ marginRight: '6px' }}
                                         />
-                                        {c.name} ({c.batteries})
+                                        {c.name} ({c.batteries}){!pinAffiliateFilter && ` - ${c.affiliate}`}
                                     </label>
                                 ))}
                         </div>
