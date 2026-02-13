@@ -181,22 +181,30 @@ function parseNum(val) {
     return parseInt(String(val).replace(/[,\s$]/g, ''), 10);
 }
 
+// Helper to get value from row with aliases
+function getVal(row, ...keys) {
+    for (const key of keys) {
+        if (row[key] !== undefined && row[key] !== '') return row[key];
+    }
+    return undefined;
+}
+
 function extractData(type, headers, rows, structured) {
+    // If structured JSON, try to use it directly
     if (type === 'manifest' && structured) {
-        // Direct JSON manifest
         const result = {};
         if (structured.locations) {
             result.locations = structured.locations.map(l => ({
                 id: l.id,
-                name: l.name,
+                name: l.name || l.location,
                 capacity: parseInt(l.capacity, 10)
             })).filter(l => l.id && l.name && !isNaN(l.capacity));
         }
         if (structured.clients) {
             result.clients = structured.clients.map((c, idx) => ({
                 id: c.id || `c_json_${idx}`,
-                name: c.name,
-                batteries: parseInt(c.batteries || c.units, 10),
+                name: c.name || c.client,
+                batteries: parseInt(c.batteries || c.units || c.count, 10),
                 affiliate: c.affiliate
             })).filter(c => c.name && !isNaN(c.batteries) && c.affiliate);
         }
@@ -208,16 +216,18 @@ function extractData(type, headers, rows, structured) {
         const clientMap = new Map();
 
         rows.forEach((row, idx) => {
-            const locName = row['location name'] || row['location'];
-            const locCap = parseNum(row['location capacity'] || row['capacity']);
-            const locId = row['id'] || `LOC_${(locName || '').replace(/[^a-zA-Z0-9]/g, '_').toUpperCase()}`;
+            const locName = getVal(row, 'location name', 'location', 'site', 'venue');
+            const locCap = parseNum(getVal(row, 'location capacity', 'capacity', 'cap'));
+            const locId = row['id'] || (locName ? `LOC_${locName.replace(/[^a-zA-Z0-9]/g, '_').toUpperCase()}` : null);
+
             if (locName && !isNaN(locCap) && !locationMap.has(locName)) {
                 locationMap.set(locName, { id: locId, name: locName, capacity: locCap });
             }
 
-            const clientName = row['client name'] || row['client'] || row['name'];
-            const batteries = parseNum(row['batteries'] || row['units']);
-            const affiliate = row['affiliate'];
+            const clientName = getVal(row, 'client name', 'client', 'name', 'customer');
+            const batteries = parseNum(getVal(row, 'batteries', 'units', 'count', 'qty'));
+            const affiliate = getVal(row, 'affiliate', 'owner', 'group');
+
             if (clientName && !isNaN(batteries) && affiliate) {
                 if (clientMap.has(clientName)) {
                     clientMap.get(clientName).batteries += batteries;
@@ -240,9 +250,9 @@ function extractData(type, headers, rows, structured) {
 
     if (type === 'locations') {
         const locations = rows.map(l => ({
-            id: l.id || `LOC_${(l.name || '').replace(/[^a-zA-Z0-9]/g, '_').toUpperCase()}`,
-            name: l.name,
-            capacity: parseNum(l.capacity)
+            id: l.id || `LOC_${(getVal(l, 'name', 'location', 'site') || '').replace(/[^a-zA-Z0-9]/g, '_').toUpperCase()}`,
+            name: getVal(l, 'name', 'location', 'site', 'venue'),
+            capacity: parseNum(getVal(l, 'capacity', 'cap'))
         })).filter(l => l.name && !isNaN(l.capacity));
         return { locations };
     }
@@ -250,9 +260,9 @@ function extractData(type, headers, rows, structured) {
     if (type === 'clients') {
         const clients = rows.map((c, idx) => ({
             id: c.id || `c_up_${idx}`,
-            name: c.name,
-            batteries: parseNum(c.batteries || c.units),
-            affiliate: c.affiliate
+            name: getVal(c, 'name', 'client', 'client name', 'customer'),
+            batteries: parseNum(getVal(c, 'batteries', 'units', 'count', 'qty')),
+            affiliate: getVal(c, 'affiliate', 'owner', 'group')
         })).filter(c => c.name && !isNaN(c.batteries) && c.affiliate);
         return { clients };
     }
