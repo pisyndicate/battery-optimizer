@@ -17,6 +17,7 @@ export default function Home() {
     const [exclusiveAffiliates, setExclusiveAffiliates] = useState([]); // Array of strings e.g. ["Brown and Sterling"]
     const [pinnedAllocations, setPinnedAllocations] = useState([]); // Array of { clientName, locationId }
     const [pinAffiliateFilter, setPinAffiliateFilter] = useState(""); // For UI dropdown filtering
+    const [userSearchTerm, setUserSearchTerm] = useState(""); // Search filter for pinning clients
     const [selectedPinClients, setSelectedPinClients] = useState(new Set()); // For manual multi-select pinning
     const [overflowState, setOverflowState] = useState(null); // { primaryLocId, clientNames }
     const [overflowLocId, setOverflowLocId] = useState("");
@@ -206,6 +207,13 @@ export default function Home() {
 
                     {/* Select Clients (Multi) */}
                     <div style={{ flex: 2, minWidth: '300px' }}>
+                        <input
+                            type="text"
+                            placeholder="Search client name..."
+                            value={userSearchTerm}
+                            onChange={(e) => setUserSearchTerm(e.target.value)}
+                            style={{ width: '100%', padding: '6px', marginBottom: '8px', border: '1px solid #ccc', borderRadius: '4px' }}
+                        />
                         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
                             <label style={{ fontSize: '0.9em', display: 'block' }}>
                                 Select Clients ({selectedPinClients.size})
@@ -214,19 +222,28 @@ export default function Home() {
                                 <input
                                     type="checkbox"
                                     checked={(() => {
-                                        const visibleClients = clients.filter(c => !pinAffiliateFilter || c.affiliate === pinAffiliateFilter);
+                                        const visibleClients = clients.filter(c =>
+                                            (!pinAffiliateFilter || c.affiliate === pinAffiliateFilter) &&
+                                            c.name.toLowerCase().includes(userSearchTerm.toLowerCase())
+                                        );
                                         return visibleClients.length > 0 && visibleClients.every(c => selectedPinClients.has(c.name));
                                     })()}
                                     ref={el => {
                                         if (el) {
-                                            const visibleClients = clients.filter(c => !pinAffiliateFilter || c.affiliate === pinAffiliateFilter);
+                                            const visibleClients = clients.filter(c =>
+                                                (!pinAffiliateFilter || c.affiliate === pinAffiliateFilter) &&
+                                                c.name.toLowerCase().includes(userSearchTerm.toLowerCase())
+                                            );
                                             const allSelected = visibleClients.length > 0 && visibleClients.every(c => selectedPinClients.has(c.name));
                                             const someSelected = visibleClients.some(c => selectedPinClients.has(c.name));
                                             el.indeterminate = someSelected && !allSelected;
                                         }
                                     }}
                                     onChange={() => {
-                                        const visibleClients = clients.filter(c => !pinAffiliateFilter || c.affiliate === pinAffiliateFilter);
+                                        const visibleClients = clients.filter(c =>
+                                            (!pinAffiliateFilter || c.affiliate === pinAffiliateFilter) &&
+                                            c.name.toLowerCase().includes(userSearchTerm.toLowerCase())
+                                        );
                                         const allSelected = visibleClients.length > 0 && visibleClients.every(c => selectedPinClients.has(c.name));
 
                                         const newSet = new Set(selectedPinClients);
@@ -251,7 +268,10 @@ export default function Home() {
                             backgroundColor: '#fff'
                         }}>
                             {clients
-                                .filter(c => !pinAffiliateFilter || c.affiliate === pinAffiliateFilter)
+                                .filter(c =>
+                                    (!pinAffiliateFilter || c.affiliate === pinAffiliateFilter) &&
+                                    c.name.toLowerCase().includes(userSearchTerm.toLowerCase())
+                                )
                                 .sort((a, b) => a.name.localeCompare(b.name))
                                 .map(c => (
                                     <label key={c.id || c.name} style={{ display: 'flex', alignItems: 'center', marginBottom: '4px', fontSize: '0.9em', cursor: 'pointer' }}>
