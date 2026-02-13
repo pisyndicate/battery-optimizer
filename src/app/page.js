@@ -25,6 +25,8 @@ export default function Home() {
     const [overflowLocId, setOverflowLocId] = useState("");
     const [customData, setCustomData] = useState(null);
     const [runId, setRunId] = useState(0);
+    const [toleranceMin, setToleranceMin] = useState(0); // "Start" Tolerance (e.g. 2%) -> Max Fill 98%
+    const [toleranceMax, setToleranceMax] = useState(0); // "End" Tolerance (e.g. 12%) -> Min Fill 88%
 
     const toggleExclusive = (name) => {
         setExclusiveAffiliates(prev =>
@@ -56,8 +58,15 @@ export default function Home() {
 
     // Run Allocation
     const { locations: allocatedLocations, clients: processedClients } = useMemo(() => {
-        return allocateBatteries(clients, locations, exclusiveAffiliates, pinnedAllocations);
-    }, [clients, locations, exclusiveAffiliates, pinnedAllocations, runId]);
+        return allocateBatteries(
+            clients,
+            locations,
+            exclusiveAffiliates,
+            pinnedAllocations,
+            toleranceMin,
+            toleranceMax
+        );
+    }, [clients, locations, exclusiveAffiliates, pinnedAllocations, runId, toleranceMin, toleranceMax]);
 
     const unallocatedClients = processedClients ? processedClients.filter(c => !c.allocated) : [];
 
@@ -134,24 +143,57 @@ export default function Home() {
             />
 
             <div style={{ marginBottom: '24px', padding: '16px', backgroundColor: '#e9ecef', borderRadius: '8px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
                     <h2 style={{ fontSize: '1.2rem', margin: 0 }}>Controls</h2>
+                </div>
+
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '24px', alignItems: 'flex-start' }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', height: '38px' }}>
+                        <input
+                            type="checkbox"
+                            checked={useAdjustedCounts}
+                            onChange={(e) => setUseAdjustedCounts(e.target.checked)}
+                        />
+                        Scale Client Counts to Fill Capacity (Target: 18,681)
+                    </label>
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px', backgroundColor: '#fff', borderRadius: '4px', border: '1px solid #ced4da' }}>
+                        <span style={{ fontWeight: 'bold', fontSize: '0.9em' }}>Capacity Tolerance (%):</span>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                            <label style={{ display: 'flex', flexDirection: 'column', fontSize: '0.8em' }}>
+                                Start (Max Fill)
+                                <input
+                                    type="number"
+                                    min="0"
+                                    max="100"
+                                    value={toleranceMin}
+                                    onChange={(e) => setToleranceMin(Number(e.target.value))}
+                                    style={{ width: '60px', padding: '4px', border: '1px solid #ccc', borderRadius: '4px' }}
+                                />
+                            </label>
+                            <span style={{ alignSelf: 'flex-end', paddingBottom: '8px' }}>-</span>
+                            <label style={{ display: 'flex', flexDirection: 'column', fontSize: '0.8em' }}>
+                                End (Target Min)
+                                <input
+                                    type="number"
+                                    min="0"
+                                    max="100"
+                                    value={toleranceMax}
+                                    onChange={(e) => setToleranceMax(Number(e.target.value))}
+                                    style={{ width: '60px', padding: '4px', border: '1px solid #ccc', borderRadius: '4px' }}
+                                />
+                            </label>
+                        </div>
+                    </div>
+
                     <button
                         onClick={() => setRunId(prev => prev + 1)}
-                        style={{ padding: '6px 12px', fontSize: '0.9em', backgroundColor: '#fff', border: '1px solid #ced4da', borderRadius: '4px', cursor: 'pointer' }}
+                        style={{ padding: '8px 16px', fontSize: '0.9em', backgroundColor: '#007bff', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}
                         title="Re-run optimization logic"
                     >
                         🔄 Refresh Organization
                     </button>
                 </div>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
-                    <input
-                        type="checkbox"
-                        checked={useAdjustedCounts}
-                        onChange={(e) => setUseAdjustedCounts(e.target.checked)}
-                    />
-                    Scale Client Counts to Fill Capacity (Target: 18,681)
-                </label>
 
                 <div style={{ marginTop: '16px', borderTop: '1px solid #ccc', paddingTop: '16px' }}>
                     <h3 style={{ fontSize: '1rem', marginBottom: '8px' }}>Segregate Affiliates (Exclusive Location Mode)</h3>

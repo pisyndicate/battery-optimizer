@@ -1,19 +1,26 @@
 import React from 'react';
 
 const LocationCard = ({ location, onDropClients, onCardClick }) => {
-    const currentTotal = location.capacity - location.remainingCapacity;
-    const percentFull = (currentTotal / location.capacity) * 100;
-    const isOver = currentTotal > location.capacity;
+    // We must recalculate current total from allocations because remainingCapacity 
+    // is now based on effectiveCapacity (tolerance), not total physical capacity.
+    // Or we can use location.effectiveCapacity.
+
+    const validAllocations = location.allocations || [];
+    const currentTotal = validAllocations.reduce((sum, a) => sum + a.amount, 0);
+    const capacityToUse = location.effectiveCapacity || location.capacity;
+    const isRestricted = location.effectiveCapacity && location.effectiveCapacity < location.originalCapacity;
+
+    const percentFull = (currentTotal / capacityToUse) * 100;
+    const isOver = currentTotal > capacityToUse;
 
     // Group allocations by Affiliate for display
     const byAffiliate = {};
-    location.allocations.forEach(alloc => {
+    validAllocations.forEach(alloc => {
         if (!byAffiliate[alloc.affiliate]) {
             byAffiliate[alloc.affiliate] = { count: 0, batteries: 0, clients: [] };
         }
         byAffiliate[alloc.affiliate].count++;
         byAffiliate[alloc.affiliate].batteries += alloc.amount;
-        // byAffiliate[alloc.affiliate].clients.push(alloc.clientName); 
     });
 
     const [isDragOver, setIsDragOver] = React.useState(false);
@@ -69,6 +76,11 @@ const LocationCard = ({ location, onDropClients, onCardClick }) => {
                     <span>Used: {currentTotal.toLocaleString()}</span>
                     <span>Max: {location.capacity.toLocaleString()}</span>
                 </div>
+                {isRestricted && (
+                    <div style={{ fontSize: '0.8em', color: '#dc3545', textAlign: 'right', marginBottom: '2px' }}>
+                        Target Cap: {capacityToUse.toLocaleString()}
+                    </div>
+                )}
                 <div style={{ marginBottom: '6px', fontSize: '0.9em', fontWeight: 'bold', color: location.remainingCapacity > 0 ? '#28a745' : '#6c757d', textAlign: 'right' }}>
                     Remaining: {location.remainingCapacity.toLocaleString()}
                 </div>
@@ -80,7 +92,7 @@ const LocationCard = ({ location, onDropClients, onCardClick }) => {
                 }}>
                     <div style={{
                         width: `${Math.min(percentFull, 100)}%`,
-                        backgroundColor: isOver ? '#dc3545' : percentFull > 90 ? '#28a745' : '#007bff',
+                        backgroundColor: isOver ? '#dc3545' : percentFull > 100 ? '#ffc107' : '#007bff',
                         height: '100%',
                         transition: 'width 0.3s ease'
                     }} />

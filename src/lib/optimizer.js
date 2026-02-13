@@ -1,15 +1,23 @@
 import { INITIAL_CLIENTS, INITIAL_LOCATIONS } from './data';
 
-export const allocateBatteries = (inputClients, inputLocations, exclusiveAffiliateNames = [], pinnedAllocations = []) => {
+export const allocateBatteries = (inputClients, inputLocations, exclusiveAffiliateNames = [], pinnedAllocations = [], toleranceMin = 0, toleranceMax = 0) => {
     // Deep copy
     let clients = JSON.parse(JSON.stringify(inputClients));
-    let locations = JSON.parse(JSON.stringify(inputLocations)).map(l => ({
-        ...l,
-        allocations: [], // Will now store { clientName, amount, affiliate }
-        remainingCapacity: l.capacity,
-        affiliatesHosted: new Set(), // Track which affiliates are here
-        exclusiveOwner: null // Track if this location is locked by an exclusive affiliate
-    }));
+    // Calculate effective limit factor
+    const limitFactor = (100 - toleranceMin) / 100;
+
+    let locations = JSON.parse(JSON.stringify(inputLocations)).map(l => {
+        const effectiveCapacity = Math.floor(l.capacity * limitFactor);
+        return {
+            ...l,
+            allocations: [], // Will now store { clientName, amount, affiliate }
+            originalCapacity: l.capacity, // Keep track of real physical cap
+            effectiveCapacity: effectiveCapacity, // The cap we are targeting
+            remainingCapacity: effectiveCapacity, // Start with the reduced cap
+            affiliatesHosted: new Set(), // Track which affiliates are here
+            exclusiveOwner: null // Track if this location is locked by an exclusive affiliate
+        };
+    });
 
     // 0. Pre-process Pinned Clients
     // Format of pinnedAllocations: [{ clientName: String, locationId: String }]
