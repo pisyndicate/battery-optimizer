@@ -6,44 +6,34 @@ import LocationCard from '@/components/LocationCard';
 import ValidationStats from '@/components/ValidationStats';
 import LocationSidebar from '@/components/LocationSidebar';
 import AffiliateSidebar from '@/components/AffiliateSidebar';
-import PinnedAllocationsList from '@/components/PinnedAllocationsList';
 import AffiliateAllocations from '@/components/AffiliateAllocations';
 import AffiliateSummary from '@/components/AffiliateSummary';
-
-import DataManagement from '@/components/DataManagement';
+import DashboardLayout from '@/components/layout/DashboardLayout';
+import SidebarControls from '@/components/controls/SidebarControls';
+import { theme } from '@/lib/theme';
+import { useToast } from '@/contexts/ToastContext';
+import OverflowModal from '@/components/OverflowModal';
 
 export default function Home() {
+    const { showToast } = useToast();
     const [selectedLocation, setSelectedLocation] = useState(null);
     const [selectedAffiliate, setSelectedAffiliate] = useState(null);
     const [viewMode, setViewMode] = useState('locations'); // 'locations' | 'affiliates'
     const [useAdjustedCounts, setUseAdjustedCounts] = useState(false);
-    const [exclusiveAffiliates, setExclusiveAffiliates] = useState([]); // Array of strings e.g. ["Brown and Sterling"]
-    const [pinnedAllocations, setPinnedAllocations] = useState([]); // Array of { clientName, locationId }
-    const [pinAffiliateFilter, setPinAffiliateFilter] = useState(""); // For UI dropdown filtering
-    const [userSearchTerm, setUserSearchTerm] = useState(""); // Search filter for pinning clients
-    const [selectedPinClients, setSelectedPinClients] = useState(new Set()); // For manual multi-select pinning
-    const [overflowState, setOverflowState] = useState(null); // { primaryLocId, clientNames }
-    const [overflowLocId, setOverflowLocId] = useState("");
+    const [exclusiveAffiliates, setExclusiveAffiliates] = useState([]);
+    const [pinnedAllocations, setPinnedAllocations] = useState([]);
+    const [overflowState, setOverflowState] = useState(null);
+    const [globalSearch, setGlobalSearch] = useState(""); // New Global Search State
+
     const [customData, setCustomData] = useState(null);
     const [runId, setRunId] = useState(0);
-    const [targetUtilization, setTargetUtilization] = useState(100); // Target % of Total Capacity (e.g. 90% -> Leave 10% free)
+    const [targetUtilization, setTargetUtilization] = useState(100);
+    const [isSidebarOpen, setIsSidebarOpen] = useState(true);
 
     const toggleExclusive = (name) => {
         setExclusiveAffiliates(prev =>
             prev.includes(name) ? prev.filter(n => n !== name) : [...prev, name]
         );
-    };
-
-    const addPin = (clientName, locationId) => {
-        setPinnedAllocations(prev => {
-            // Remove existing pin for this client if exists
-            const filtered = prev.filter(p => p.clientName !== clientName);
-            return [...filtered, { clientName, locationId }];
-        });
-    };
-
-    const removePin = (clientName) => {
-        setPinnedAllocations(prev => prev.filter(p => p.clientName !== clientName));
     };
 
     const locations = useMemo(() => customData?.locations || INITIAL_LOCATIONS, [customData]);
@@ -62,12 +52,92 @@ export default function Home() {
         return baseClients;
     }, [useAdjustedCounts, customData, totalCapacity, targetUtilization]);
 
-    // Run Allocation
-    const { locations: allocatedLocations, clients: processedClients } = useMemo(() => {
-        // Tolerance Min = (100 - targetUtilization)
-        // If Target is 90%, we want to cap effectively at 90% (Tolerance 10%)
-        const effectiveTolerance = Math.max(0, 100 - targetUtilization);
+    const handlePinClients = (clientNames, targetLocId) => {
+        const targetLoc = locations.find(l => l.id === targetLocId);
+        if (!targetLoc) return;
 
+        const allocatedLoc = allocatedLocations.find(l => l.id === targetLocId);
+        // Use effectiveCapacity if available (from optimizer), else fallback to raw utilization calc
+        const capacityLimit = allocatedLoc ? (allocatedLoc.effectiveCapacity || allocatedLoc.capacity) : Math.floor(targetLoc.capacity * (targetUtilization / 100));
+
+        const existingPins = pinnedAllocations.filter(p => p.locationId === targetLocId && !clientNames.includes(p.clientName));
+        const existingLoad = existingPins.reduce((sum, p) => {
+            const c = clients.find(cl => cl.name === p.clientName);
+            return sum + (c ? c.batteries : 0);
+        }, 0);
+
+        const newLoadClients = clientNames.map(name => clients.find(c => c.name === name)).filter(Boolean);
+        const newLoad = newLoadClients.reduce((sum, c) => sum + c.batteries, 0);
+
+        if (existingLoad + newLoad > capacityLimit) {
+            setOverflowState({
+                primaryLocation: {
+                    ...targetLoc,
+                    currentUsage: existingLoad,
+                    totalCapacity: targetLoc.capacity,
+                    capacityToUse: capacityLimit
+                },
+                overflowClients: newLoadClients,
+                existingPinsCount: existingLoad
+            });
+        } else {
+            setPinnedAllocations(prev => {
+                const filtered = prev.filter(p => !clientNames.includes(p.clientName));
+                const newPins = clientNames.map(name => ({ clientName: name, locationId: targetLocId }));
+                return [...filtered, ...newPins];
+            });
+            showToast(`Pinned ${clientNames.length} clients to ${targetLoc.name}`, 'success');
+        }
+    };
+
+    const handleConfirmSplit = (fittingClients, overflowClients, overflowLocId) => {
+        if (!overflowState) return;
+        const { primaryLocation } = overflowState;
+
+        setPinnedAllocations(prev => {
+            const allNames = [...fittingClients, ...overflowClients].map(c => c.name);
+            const filtered = prev.filter(p => !allNames.includes(p.clientName));
+
+            const pinsPrimary = fittingClients.map(c => ({ clientName: c.name, locationId: primaryLocation.id }));
+            const pinsOverflow = overflowClients.map(c => ({ clientName: c.name, locationId: overflowLocId }));
+
+            return [...filtered, ...pinsPrimary, ...pinsOverflow];
+        });
+
+        showToast(`Split ${fittingClients.length + overflowClients.length} clients between ${primaryLocation.name} and backup`, 'success');
+        setOverflowState(null);
+    };
+
+    const handleForcePrimary = (allClients) => {
+        if (!overflowState) return;
+        const { primaryLocation } = overflowState;
+
+        setPinnedAllocations(prev => {
+            const clientNames = allClients.map(c => c.name);
+            const filtered = prev.filter(p => !clientNames.includes(p.clientName));
+            const newPins = clientNames.map(name => ({ clientName: name, locationId: primaryLocation.id }));
+            return [...filtered, ...newPins];
+        });
+
+        showToast(`Forced ${allClients.length} clients into ${primaryLocation.name}`, 'warning');
+        setOverflowState(null);
+    };
+
+    const handleMasterReset = () => {
+        if (confirm("⚠️ RESET ALL WARNING ⚠️\n\nThis will clear:\n- All pinned clients\n- Exclusive affiliate filters\n- Custom data imports\n- Target utilization (reset to 100%)\n\nAre you sure?")) {
+            setPinnedAllocations([]);
+            setExclusiveAffiliates([]);
+            setTargetUtilization(100);
+            setCustomData(null);
+            setUseAdjustedCounts(false);
+            setGlobalSearch("");
+            setRunId(prev => prev + 1);
+            showToast("Application has been fully reset.", "warning");
+        }
+    };
+
+    const { locations: allocatedLocations, clients: processedClients } = useMemo(() => {
+        const effectiveTolerance = Math.max(0, 100 - targetUtilization);
         return allocateBatteries(
             clients,
             locations,
@@ -78,8 +148,22 @@ export default function Home() {
         );
     }, [clients, locations, exclusiveAffiliates, pinnedAllocations, runId, targetUtilization]);
 
+    // FILTERED LOCATIONS for Search
+    const filteredLocations = useMemo(() => {
+        if (!globalSearch.trim()) return allocatedLocations;
+
+        const term = globalSearch.toLowerCase();
+        return allocatedLocations.filter(loc => {
+            // Check location name
+            if (loc.name.toLowerCase().includes(term)) return true;
+            // Check clients in location
+            if (loc.allocations.some(a => a.clientName.toLowerCase().includes(term))) return true;
+            return false;
+        });
+    }, [allocatedLocations, globalSearch]);
+
+
     const unallocatedClients = processedClients ? processedClients.filter(c => !c.allocated) : [];
-    // remove redundant totalCapacity calc
     const totalDemand = clients.reduce((sum, c) => sum + c.batteries, 0);
 
     const handleExportCSV = () => {
@@ -95,565 +179,249 @@ export default function Home() {
             });
         });
 
+        if (rows.length <= 1) {
+            showToast('No data to export', 'error');
+            return;
+        }
+
         const csvContent = rows.join('\n');
         const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
         const url = URL.createObjectURL(blob);
         const link = document.createElement('a');
         link.setAttribute('href', url);
-        link.setAttribute('download', 'battery_manifest.csv');
+        link.setAttribute('download', `battery_manifest_${new Date().toISOString().slice(0, 10)}.csv`);
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
+
+        showToast(`Exported ${rows.length - 1} rows to CSV`, 'success');
     };
 
-    return (
-        <main style={{
-            padding: '24px',
-            paddingRight: selectedLocation ? '440px' : '24px', // Shift content for sidebar (400px + padding)
-            maxWidth: selectedLocation ? '100%' : '1600px', // Allow full width when sidebar is open
-            margin: '0 auto',
-            transition: 'all 0.3s ease'
-        }}>
-            <header style={{ marginBottom: '32px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div>
-                    <h1 style={{ fontSize: '2rem', fontWeight: 'bold' }}>Battery Allocation Optimizer</h1>
-                    <p style={{ color: '#666' }}>Client Level Allocation</p>
+    // --- Header Content ---
+    const headerContent = (
+        <div style={{ display: 'flex', alignItems: 'center', width: '100%', justifyContent: 'space-between' }}>
+            <div style={{ display: 'flex', gap: '24px', alignItems: 'center', flex: 1 }}>
+
+                {/* Search Bar */}
+                <div style={{ position: 'relative', width: '300px' }}>
+                    <span style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: '#64748b' }}>🔍</span>
+                    <input
+                        type="text"
+                        placeholder="Search Client or Location..."
+                        value={globalSearch}
+                        onChange={(e) => setGlobalSearch(e.target.value)}
+                        style={{
+                            width: '100%',
+                            padding: '8px 10px 8px 36px',
+                            borderRadius: '6px',
+                            border: '1px solid #e2e8f0',
+                            backgroundColor: '#f8fafc',
+                            fontSize: '0.9rem',
+                            outline: 'none'
+                        }}
+                    />
                 </div>
-                <div style={{ textAlign: 'right' }}>
-                    <div style={{ marginBottom: '8px' }}>
-                        <button onClick={handleExportCSV} style={{ marginRight: '16px', color: '#007bff', background: 'none', border: 'none', padding: 0, fontSize: 'inherit', cursor: 'pointer', textDecoration: 'underline' }}>Export CSV</button>
-                        <a href="/print" target="_blank" style={{ marginRight: '16px', color: '#007bff' }}>Print Manifest</a>
-                        <strong>Total Capacity:</strong> {totalCapacity.toLocaleString()}
+
+                {/* Metrics */}
+                <div style={{ display: 'flex', gap: '24px', alignItems: 'center' }}>
+                    <div title="Total Capacity">
+                        <span style={{ fontSize: '0.75rem', display: 'block', color: 'var(--color-text-secondary)', fontWeight: '600', letterSpacing: '0.5px' }}>CAPACITY</span>
+                        <span style={{ fontWeight: '700', fontSize: '1.25rem', color: 'var(--color-text-primary)' }}>{totalCapacity.toLocaleString()}</span>
                     </div>
-                    <div>
-                        <strong>Total Demand:</strong> {totalDemand.toLocaleString()}
-                        <span style={{
-                            color: totalDemand !== totalCapacity ? '#dc3545' : '#28a745',
-                            marginLeft: '8px',
-                            fontWeight: 'bold'
-                        }}>
-                            ({(totalDemand - totalCapacity).toLocaleString()})
+                    <div title="Total Demand">
+                        <span style={{ fontSize: '0.75rem', display: 'block', color: 'var(--color-text-secondary)', fontWeight: '600', letterSpacing: '0.5px' }}>DEMAND</span>
+                        <span style={{ fontWeight: '700', fontSize: '1.25rem', color: totalDemand > totalCapacity ? 'var(--color-danger)' : 'var(--color-text-primary)' }}>
+                            {totalDemand.toLocaleString()}
                         </span>
                     </div>
-                </div>
-            </header>
-
-            <DataManagement
-                onDataUpload={(data) => setCustomData(prev => ({ ...prev, ...data }))}
-                onReset={() => {
-                    if (confirm('Reset to default data?')) setCustomData(null);
-                }}
-            />
-
-            <ValidationStats
-                locations={allocatedLocations}
-                totalClients={clients.length}
-                unallocatedList={unallocatedClients}
-            />
-
-            <AffiliateSummary locations={allocatedLocations} />
-
-            <div style={{ marginBottom: '24px', padding: '16px', backgroundColor: '#e9ecef', borderRadius: '8px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-                    <h2 style={{ fontSize: '1.2rem', margin: 0 }}>Controls</h2>
-                </div>
-
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '24px', alignItems: 'flex-start' }}>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', height: '38px' }}>
-                        <input
-                            type="checkbox"
-                            checked={useAdjustedCounts}
-                            onChange={(e) => setUseAdjustedCounts(e.target.checked)}
-                        />
-                        Scale Client Counts to Fill Capacity (Target: {totalCapacity ? Math.floor(totalCapacity * (targetUtilization / 100)).toLocaleString() : 'Loading...'})
-                    </label>
-
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px', backgroundColor: '#fff', borderRadius: '4px', border: '1px solid #ced4da' }}>
-                        <span style={{ fontWeight: 'bold', fontSize: '0.9em' }}>Target System Utilization (%):</span>
-                        <input
-                            type="number"
-                            min="1"
-                            max="100"
-                            value={targetUtilization}
-                            onChange={(e) => setTargetUtilization(Number(e.target.value))}
-                            style={{ width: '60px', padding: '4px', border: '1px solid #ccc', borderRadius: '4px' }}
-                        />
-                        <span style={{ fontSize: '0.8em', color: '#666' }}>
-                            (Effective Cap: {targetUtilization}%)
-                        </span>
-                    </div>
-
-                    <button
-                        onClick={() => setRunId(prev => prev + 1)}
-                        style={{ padding: '8px 16px', fontSize: '0.9em', backgroundColor: '#007bff', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}
-                        title="Re-run optimization logic"
-                    >
-                        🔄 Refresh Organization
-                    </button>
-                </div>
-
-                <div style={{ marginTop: '16px', borderTop: '1px solid #ccc', paddingTop: '16px' }}>
-                    <h3 style={{ fontSize: '1rem', marginBottom: '8px' }}>Segregate Affiliates (Exclusive Location Mode)</h3>
-                    <p style={{ fontSize: '0.85em', color: '#666', marginBottom: '8px' }}>
-                        Selected affiliates will be granted exclusive access to locations. No other affiliates will share their space.
-                    </p>
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px' }}>
-                        {Array.from(new Set(clients.map(c => c.affiliate))).sort().map(aff => (
-                            <label key={aff} style={{
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: '6px',
-                                padding: '4px 8px',
-                                backgroundColor: exclusiveAffiliates.includes(aff) ? '#cce5ff' : '#fff',
-                                borderRadius: '4px',
-                                border: '1px solid #ddd',
-                                fontSize: '0.9em',
-                                cursor: 'pointer'
-                            }}>
-                                <input
-                                    type="checkbox"
-                                    checked={exclusiveAffiliates.includes(aff)}
-                                    onChange={() => toggleExclusive(aff)}
-                                />
-                                {aff}
-                            </label>
-                        ))}
+                    {/* Utilization Bar */}
+                    <div style={{ width: '100px', height: '8px', backgroundColor: '#e2e8f0', borderRadius: '4px', overflow: 'hidden' }}>
+                        <div style={{
+                            width: `${Math.min((totalDemand / totalCapacity) * 100, 100)}%`,
+                            height: '100%',
+                            backgroundColor: totalDemand > totalCapacity ? 'var(--color-danger)' : 'var(--color-primary)',
+                            transition: 'width 0.5s ease-out'
+                        }}></div>
                     </div>
                 </div>
             </div>
 
-            {/* Pin Clients Section */}
-            <div style={{ marginBottom: '24px', padding: '16px', backgroundColor: '#f8f9fa', borderRadius: '8px', border: '1px solid #dee2e6' }}>
-                <h2 style={{ fontSize: '1.2rem', marginBottom: '12px' }}>Pin Clients to Locations</h2>
-                <div style={{ display: 'flex', gap: '16px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', gap: '12px' }}>
+                <button
+                    onClick={handleMasterReset}
+                    className="btn"
+                    style={{
+                        display: 'flex',
+                        gap: '8px',
+                        backgroundColor: '#fee2e2',
+                        color: '#ef4444',
+                        border: '1px solid #fecaca',
+                        fontWeight: '600'
+                    }}
+                    title="Reset Everything (Pins, Data, Settings)"
+                >
+                    <span>🔄</span> Reset App
+                </button>
+                <a
+                    href="/print"
+                    target="_blank"
+                    className="btn btn-secondary"
+                    style={{ textDecoration: 'none', display: 'flex', gap: '8px' }}
+                >
+                    <span>🖨️</span> Print
+                </a>
+                <button
+                    onClick={handleExportCSV}
+                    className="btn btn-primary"
+                    style={{ display: 'flex', gap: '8px' }}
+                >
+                    <span>⬇</span> Export
+                </button>
+            </div>
+        </div>
+    );
 
-                    {/* Select Affiliate Filter */}
-                    {/* Select Affiliate Filter */}
-                    <div style={{ flex: 1, minWidth: '200px' }}>
-                        <label style={{ display: 'block', marginBottom: '4px', fontSize: '0.9em' }}>Affiliate Filter</label>
-                        <select
-                            style={{ width: '100%', padding: '4px 8px', borderRadius: '4px', border: '1px solid #ccc' }}
-                            onChange={(e) => {
-                                setPinAffiliateFilter(e.target.value);
-                                setSelectedPinClients(new Set()); // Clear selection on filter change
-                            }}
-                            value={pinAffiliateFilter}
-                        >
-                            <option value="">All Affiliates</option>
-                            {Array.from(new Set(clients.map(c => c.affiliate))).sort().map(aff => (
-                                <option key={aff} value={aff}>{aff}</option>
-                            ))}
-                        </select>
-                    </div>
-
-                    {/* Select Clients (Multi) */}
-                    <div style={{ flex: 2, minWidth: '300px' }}>
-                        <input
-                            type="text"
-                            placeholder="Search client name..."
-                            value={userSearchTerm}
-                            onChange={(e) => setUserSearchTerm(e.target.value)}
-                            style={{ width: '100%', padding: '6px', marginBottom: '8px', border: '1px solid #ccc', borderRadius: '4px' }}
-                        />
-                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
-                            <label style={{ fontSize: '0.9em', display: 'block' }}>
-                                Select Clients ({selectedPinClients.size})
-                            </label>
-                            <label style={{ fontSize: '0.9em', cursor: 'pointer', color: '#007bff', display: 'flex', alignItems: 'center' }}>
-                                <input
-                                    type="checkbox"
-                                    checked={(() => {
-                                        const visibleClients = clients.filter(c =>
-                                            (!pinAffiliateFilter || c.affiliate === pinAffiliateFilter) &&
-                                            c.name.toLowerCase().includes(userSearchTerm.toLowerCase())
-                                        );
-                                        return visibleClients.length > 0 && visibleClients.every(c => selectedPinClients.has(c.name));
-                                    })()}
-                                    ref={el => {
-                                        if (el) {
-                                            const visibleClients = clients.filter(c =>
-                                                (!pinAffiliateFilter || c.affiliate === pinAffiliateFilter) &&
-                                                c.name.toLowerCase().includes(userSearchTerm.toLowerCase())
-                                            );
-                                            const allSelected = visibleClients.length > 0 && visibleClients.every(c => selectedPinClients.has(c.name));
-                                            const someSelected = visibleClients.some(c => selectedPinClients.has(c.name));
-                                            el.indeterminate = someSelected && !allSelected;
-                                        }
-                                    }}
-                                    onChange={() => {
-                                        const visibleClients = clients.filter(c =>
-                                            (!pinAffiliateFilter || c.affiliate === pinAffiliateFilter) &&
-                                            c.name.toLowerCase().includes(userSearchTerm.toLowerCase())
-                                        );
-                                        const allSelected = visibleClients.length > 0 && visibleClients.every(c => selectedPinClients.has(c.name));
-
-                                        const newSet = new Set(selectedPinClients);
-                                        if (allSelected) {
-                                            visibleClients.forEach(c => newSet.delete(c.name));
-                                        } else {
-                                            visibleClients.forEach(c => newSet.add(c.name));
-                                        }
-                                        setSelectedPinClients(newSet);
-                                    }}
-                                    style={{ marginRight: '4px' }}
-                                />
-                                Select All
-                            </label>
-                        </div>
-                        <div style={{
-                            height: '150px',
-                            overflowY: 'auto',
-                            border: '1px solid #ccc',
-                            borderRadius: '4px',
-                            padding: '8px',
-                            backgroundColor: '#fff'
-                        }}>
-                            {clients
-                                .filter(c =>
-                                    (!pinAffiliateFilter || c.affiliate === pinAffiliateFilter) &&
-                                    c.name.toLowerCase().includes(userSearchTerm.toLowerCase())
-                                )
-                                .sort((a, b) => a.name.localeCompare(b.name))
-                                .map(c => (
-                                    <label key={c.id || c.name} style={{ display: 'flex', alignItems: 'center', marginBottom: '4px', fontSize: '0.9em', cursor: 'pointer' }}>
-                                        <input
-                                            type="checkbox"
-                                            checked={selectedPinClients.has(c.name)}
-                                            onChange={() => {
-                                                const newSet = new Set(selectedPinClients);
-                                                if (newSet.has(c.name)) newSet.delete(c.name);
-                                                else newSet.add(c.name);
-                                                setSelectedPinClients(newSet);
-                                            }}
-                                            style={{ marginRight: '6px' }}
-                                        />
-                                        {c.name} ({c.batteries}){!pinAffiliateFilter && ` - ${c.affiliate}`}
-                                    </label>
-                                ))}
-                        </div>
-                    </div>
-
-                    {/* Select Location & Action */}
-                    <div style={{ flex: 1, minWidth: '200px' }}>
-                        <label style={{ display: 'block', marginBottom: '4px', fontSize: '0.9em' }}>Target Location</label>
-                        <select
-                            id="pin-location-select"
-                            style={{ width: '100%', padding: '4px 8px', borderRadius: '4px', border: '1px solid #ccc', marginBottom: '8px' }}
-                        >
-                            <option value="">-- Choose Location --</option>
-                            {locations
-                                .sort((a, b) => b.capacity - a.capacity)
-                                .map(l => (
-                                    <option key={l.id} value={l.id}>
-                                        {l.name} (Cap: {l.capacity})
-                                    </option>
-                                ))}
-                        </select>
-                        <button
-                            onClick={() => {
-                                const locSelect = document.getElementById('pin-location-select');
-                                const locId = locSelect.value;
-                                if (selectedPinClients.size > 0 && locId) {
-                                    const clientNames = Array.from(selectedPinClients);
-
-                                    // Validation
-                                    const targetLoc = locations.find(l => l.id === locId);
-                                    const startPins = pinnedAllocations.filter(p => p.locationId === locId && !clientNames.includes(p.clientName));
-                                    const currentLoad = startPins.reduce((sum, p) => {
-                                        const c = clients.find(cl => cl.name === p.clientName);
-                                        return sum + (c ? c.batteries : 0);
-                                    }, 0);
-                                    const newLoad = clientNames.reduce((sum, name) => {
-                                        const c = clients.find(cl => cl.name === name);
-                                        return sum + (c ? c.batteries : 0);
-                                    }, 0);
-
-                                    if (currentLoad + newLoad > targetLoc.capacity) {
-                                        // Trigger Overflow Mode
-                                        setOverflowState({ primaryLocId: locId, clientNames });
-                                        return;
-                                    }
-
-                                    setPinnedAllocations(prev => {
-                                        const filtered = prev.filter(p => !clientNames.includes(p.clientName));
-                                        const newPins = clientNames.map(name => ({ clientName: name, locationId: locId }));
-                                        return [...filtered, ...newPins];
-                                    });
-                                    setSelectedPinClients(new Set()); // Reset selection
-                                }
-                            }}
-                            disabled={selectedPinClients.size === 0 || !!overflowState}
-                            style={{
-                                width: '100%',
-                                padding: '8px 12px',
-                                backgroundColor: selectedPinClients.size > 0 && !overflowState ? '#28a745' : '#6c757d',
-                                color: 'white',
-                                borderRadius: '4px',
-                                border: 'none',
-                                cursor: selectedPinClients.size > 0 && !overflowState ? 'pointer' : 'not-allowed'
-                            }}
-                        >
-                            Pin {selectedPinClients.size} Clients
-                        </button>
-                    </div>
-                </div>
-
-                {/* Overflow UI */}
-                {overflowState && (() => {
-                    const primaryLoc = locations.find(l => l.id === overflowState.primaryLocId);
-                    const clientObjects = overflowState.clientNames.map(name => clients.find(c => c.name === name)).filter(Boolean);
-                    const totalDemand = clientObjects.reduce((s, c) => s + c.batteries, 0);
-
-                    // Calculate existing load to determine remaining space in primary
-                    const existingPins = pinnedAllocations.filter(p => p.locationId === overflowState.primaryLocId && !overflowState.clientNames.includes(p.clientName));
-                    const existingLoad = existingPins.reduce((sum, p) => {
-                        const c = clients.find(cl => cl.name === p.clientName);
-                        return sum + (c ? c.batteries : 0);
-                    }, 0);
-                    const spaceInPrimary = Math.max(0, primaryLoc.capacity - existingLoad);
-
-                    return (
-                        <div style={{ marginTop: '16px', padding: '12px', border: '1px solid #dc3545', borderRadius: '4px', backgroundColor: '#fff5f5' }}>
-                            <h4 style={{ color: '#dc3545', marginTop: 0 }}>⚠️ Capacity Exceeded for {primaryLoc?.name}</h4>
-                            <p style={{ fontSize: '0.9em' }}>
-                                Selected clients ({totalDemand} units) exceed available space ({spaceInPrimary} units).
-                                <br />
-                                Please select an Overflow Location.
-                            </p>
-
-                            <div style={{ display: 'flex', gap: '12px', alignItems: 'center', marginTop: '12px' }}>
-                                <div style={{ flex: 1 }}>
-                                    <label style={{ display: 'block', marginBottom: '4px', fontSize: '0.9em' }}>Overflow Location</label>
-                                    <select
-                                        style={{ width: '100%', padding: '4px 8px', borderRadius: '4px', border: '1px solid #ccc' }}
-                                        value={overflowLocId}
-                                        onChange={(e) => setOverflowLocId(e.target.value)}
-                                    >
-                                        <option value="">-- Choose Overflow --</option>
-                                        {locations
-                                            .filter(l => l.id !== overflowState.primaryLocId)
-                                            .sort((a, b) => b.capacity - a.capacity)
-                                            .map(l => (
-                                                <option key={l.id} value={l.id}>
-                                                    {l.name} (Cap: {l.capacity})
-                                                </option>
-                                            ))}
-                                    </select>
-                                </div>
-                                <button
-                                    onClick={() => {
-                                        if (!overflowLocId) return;
-
-                                        // GREEDY SPLIT LOGIC
-                                        // Sort clients descending
-                                        const sortedClients = [...clientObjects].sort((a, b) => b.batteries - a.batteries);
-
-                                        let currentPrimaryLoad = existingLoad;
-                                        const primaryPins = [];
-                                        const overflowPins = [];
-
-                                        sortedClients.forEach(c => {
-                                            if (currentPrimaryLoad + c.batteries <= primaryLoc.capacity) {
-                                                primaryPins.push({ clientName: c.name, locationId: overflowState.primaryLocId });
-                                                currentPrimaryLoad += c.batteries;
-                                            } else {
-                                                overflowPins.push({ clientName: c.name, locationId: overflowLocId });
-                                            }
-                                        });
-
-                                        // Validate Overflow Capacity
-                                        const overflowLoc = locations.find(l => l.id === overflowLocId);
-                                        const existingOverflowPins = pinnedAllocations.filter(p => p.locationId === overflowLocId && !overflowState.clientNames.includes(p.clientName));
-                                        const existingOverflowLoad = existingOverflowPins.reduce((sum, p) => {
-                                            const c = clients.find(cl => cl.name === p.clientName);
-                                            return sum + (c ? c.batteries : 0);
-                                        }, 0);
-
-                                        const newOverflowLoad = overflowPins.reduce((s, p) => {
-                                            const c = clients.find(cl => cl.name === p.clientName);
-                                            return s + (c ? c.batteries : 0);
-                                        }, 0);
-
-                                        if (existingOverflowLoad + newOverflowLoad > overflowLoc.capacity) {
-                                            if (!confirm(`Combined Overflow exceeds ${overflowLoc.name}'s capacity! Proceed anyway?`)) {
-                                                return;
-                                            }
-                                        }
-
-                                        // Apply Split
-                                        setPinnedAllocations(prev => {
-                                            const filtered = prev.filter(p => !overflowState.clientNames.includes(p.clientName));
-                                            return [...filtered, ...primaryPins, ...overflowPins];
-                                        });
-
-                                        // Cleanup
-                                        setSelectedPinClients(new Set());
-                                        setOverflowState(null);
-                                        setOverflowLocId("");
-                                    }}
-                                    style={{
-                                        padding: '6px 12px',
-                                        backgroundColor: '#17a2b8',
-                                        color: 'white',
-                                        borderRadius: '4px',
-                                        border: 'none',
-                                        cursor: 'pointer',
-                                        marginTop: '18px'
-                                    }}
-                                >
-                                    Confirm Split
-                                </button>
-                                <button
-                                    onClick={() => {
-                                        // Force into Primary Logic
-                                        setPinnedAllocations(prev => {
-                                            const filtered = prev.filter(p => !overflowState.clientNames.includes(p.clientName));
-                                            const newPins = overflowState.clientNames.map(name => ({
-                                                clientName: name,
-                                                locationId: overflowState.primaryLocId
-                                            }));
-                                            return [...filtered, ...newPins];
-                                        });
-
-                                        setSelectedPinClients(new Set());
-                                        setOverflowState(null);
-                                        setOverflowLocId("");
-                                    }}
-                                    style={{
-                                        padding: '6px 12px',
-                                        backgroundColor: '#dc3545',
-                                        color: 'white',
-                                        borderRadius: '4px',
-                                        border: 'none',
-                                        cursor: 'pointer',
-                                        marginTop: '18px'
-                                    }}
-                                >
-                                    Force into {primaryLoc.name}
-                                </button>
-                                <button
-                                    onClick={() => {
-                                        setOverflowState(null);
-                                        setOverflowLocId("");
-                                    }}
-                                    style={{
-                                        padding: '6px 12px',
-                                        backgroundColor: '#6c757d',
-                                        color: 'white',
-                                        borderRadius: '4px',
-                                        border: 'none',
-                                        cursor: 'pointer',
-                                        marginTop: '18px'
-                                    }}
-                                >
-                                    Cancel
-                                </button>
-                            </div>
-                        </div>
-                    );
-                })()}
-
-                {/* List of Pinned Items */}
-                <PinnedAllocationsList
-                    pinnedAllocations={pinnedAllocations}
+    return (
+        <DashboardLayout
+            isSidebarOpen={isSidebarOpen}
+            setIsSidebarOpen={setIsSidebarOpen}
+            sidebarContent={
+                <SidebarControls
+                    targetUtilization={targetUtilization}
+                    setTargetUtilization={setTargetUtilization}
+                    useAdjustedCounts={useAdjustedCounts}
+                    setUseAdjustedCounts={setUseAdjustedCounts}
+                    totalCapacity={totalCapacity}
+                    onRefresh={() => setRunId(prev => prev + 1)}
+                    exclusiveAffiliates={exclusiveAffiliates}
+                    toggleExclusive={toggleExclusive}
                     clients={clients}
                     locations={locations}
-                    onRemovePin={removePin}
+                    pinnedAllocations={pinnedAllocations}
+                    setPinnedAllocations={setPinnedAllocations}
+                    onDataUpload={(data) => setCustomData(prev => ({ ...prev, ...data }))}
+                    onReset={() => {
+                        if (confirm('Reset to default data?')) {
+                            setCustomData(null);
+                            showToast('Application reset to default data', 'info');
+                        }
+                    }}
+                    onPinClients={handlePinClients}
                 />
+            }
+            headerContent={headerContent}
+        >
+            {/* Top Stats & View Switcher */}
+            <div style={{ marginBottom: '24px', display: 'flex', gap: '24px', alignItems: 'flex-start', flexWrap: 'wrap' }}>
+                <div style={{ flex: 1 }}>
+                    <ValidationStats
+                        locations={allocatedLocations}
+                        totalClients={clients.length}
+                        unallocatedList={unallocatedClients}
+                    />
+                </div>
+                <div style={{
+                    backgroundColor: 'var(--color-surface)',
+                    padding: '4px',
+                    borderRadius: '8px',
+                    border: '1px solid var(--color-border)',
+                    display: 'flex',
+                    gap: '4px',
+                    height: 'fit-content'
+                }}>
+                    <button
+                        onClick={() => setViewMode('locations')}
+                        className="btn"
+                        style={{
+                            backgroundColor: viewMode === 'locations' ? '#eff6ff' : 'transparent',
+                            color: viewMode === 'locations' ? 'var(--color-primary)' : 'var(--color-text-secondary)',
+                            fontWeight: '600',
+                            fontSize: '0.875rem',
+                            border: 'none'
+                        }}
+                    >
+                        Locations
+                    </button>
+                    <button
+                        onClick={() => setViewMode('affiliates')}
+                        className="btn"
+                        style={{
+                            backgroundColor: viewMode === 'affiliates' ? '#eff6ff' : 'transparent',
+                            color: viewMode === 'affiliates' ? 'var(--color-primary)' : 'var(--color-text-secondary)',
+                            fontWeight: '600',
+                            fontSize: '0.875rem',
+                            border: 'none'
+                        }}
+                    >
+                        Affiliates
+                    </button>
+                </div>
             </div>
 
-            <section>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-                    <h2 style={{ fontSize: '1.5rem', margin: 0 }}>Allocations</h2>
-                    <div style={{ display: 'flex', gap: '8px' }}>
-                        <button
-                            onClick={() => setViewMode('locations')}
-                            style={{
-                                padding: '8px 16px',
-                                borderRadius: '4px',
-                                border: '1px solid #007bff',
-                                backgroundColor: viewMode === 'locations' ? '#007bff' : 'white',
-                                color: viewMode === 'locations' ? 'white' : '#007bff',
-                                cursor: 'pointer',
-                                fontWeight: 'bold'
+            {/* Main Grid */}
+            {viewMode === 'locations' ? (
+                <div style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))',
+                    gap: '20px',
+                    paddingBottom: '40px'
+                }}>
+                    {filteredLocations.length === 0 && (
+                        <div style={{ gridColumn: '1/-1', textAlign: 'center', padding: '40px', color: '#64748b' }}>
+                            No locations found matching "{globalSearch}"
+                        </div>
+                    )}
+                    {filteredLocations.map(loc => (
+                        <LocationCard
+                            key={loc.id}
+                            location={loc}
+                            onDropClients={(locId, clientNames) => {
+                                // Reusing handlePinClients logic but wrapped for drop interface
+                                handlePinClients(clientNames, locId);
                             }}
-                        >
-                            By Location
-                        </button>
-                        <button
-                            onClick={() => setViewMode('affiliates')}
-                            style={{
-                                padding: '8px 16px',
-                                borderRadius: '4px',
-                                border: '1px solid #007bff',
-                                backgroundColor: viewMode === 'affiliates' ? '#007bff' : 'white',
-                                color: viewMode === 'affiliates' ? 'white' : '#007bff',
-                                cursor: 'pointer',
-                                fontWeight: 'bold'
-                            }}
-                        >
-                            By Affiliate
-                        </button>
-                    </div>
+                            onCardClick={() => setSelectedLocation(loc)}
+                        />
+                    ))}
                 </div>
-
-                {viewMode === 'locations' ? (
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '16px' }}>
-                        {allocatedLocations.map(loc => (
-                            <LocationCard
-                                key={loc.id}
-                                location={loc}
-                                onDropClients={(locId, clientNames) => {
-                                    // Validation
-                                    const targetLoc = locations.find(l => l.id === locId);
-                                    const startPins = pinnedAllocations.filter(p => p.locationId === locId && !clientNames.includes(p.clientName));
-                                    const currentLoad = startPins.reduce((sum, p) => {
-                                        const c = clients.find(cl => cl.name === p.clientName);
-                                        return sum + (c ? c.batteries : 0);
-                                    }, 0);
-                                    const newLoad = clientNames.reduce((sum, name) => {
-                                        const c = clients.find(cl => cl.name === name);
-                                        return sum + (c ? c.batteries : 0);
-                                    }, 0);
-
-                                    if (currentLoad + newLoad > targetLoc.capacity) {
-                                        if (!confirm(`Capacity Warning: Adding these clients will exceed ${targetLoc.name}'s capacity. Proceed anyway?`)) {
-                                            return;
-                                        }
-                                    }
-
-                                    // Batch add pins directly
-                                    setPinnedAllocations(prev => {
-                                        const filtered = prev.filter(p => !clientNames.includes(p.clientName));
-                                        const newPins = clientNames.map(name => ({ clientName: name, locationId: locId }));
-                                        return [...filtered, ...newPins];
-                                    });
-                                }}
-                                onCardClick={() => setSelectedLocation(loc)}
-                            />
-                        ))}
-                    </div>
-                ) : (
+            ) : (
+                <div style={{ paddingBottom: '40px' }}>
+                    <AffiliateSummary locations={filteredLocations} />
                     <AffiliateAllocations
-                        locations={allocatedLocations}
+                        locations={filteredLocations}
                         onAffiliateClick={setSelectedAffiliate}
                     />
-                )}
-            </section>
+                </div>
+            )
+            }
 
-            {selectedLocation && (
-                <LocationSidebar
-                    location={selectedLocation}
-                    onClose={() => setSelectedLocation(null)}
-                />
-            )}
+            {/* Overlays */}
+            {
+                selectedLocation && (
+                    <LocationSidebar
+                        location={selectedLocation}
+                        onClose={() => setSelectedLocation(null)}
+                    />
+                )
+            }
 
-            {selectedAffiliate && (
-                <AffiliateSidebar
-                    affiliate={selectedAffiliate}
-                    onClose={() => setSelectedAffiliate(null)}
-                />
-            )}
-        </main>
+            {
+                selectedAffiliate && (
+                    <AffiliateSidebar
+                        affiliate={selectedAffiliate}
+                        onClose={() => setSelectedAffiliate(null)}
+                    />
+                )
+            }
+
+            <OverflowModal
+                isOpen={!!overflowState}
+                onClose={() => setOverflowState(null)}
+                primaryLocation={overflowState?.primaryLocation}
+                overflowClients={overflowState?.overflowClients}
+                allLocations={allocatedLocations}
+                onConfirmSplit={handleConfirmSplit}
+                onForcePrimary={handleForcePrimary}
+            />
+        </DashboardLayout >
     );
 }

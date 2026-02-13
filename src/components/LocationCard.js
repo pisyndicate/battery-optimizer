@@ -1,23 +1,20 @@
+'use client';
 import React from 'react';
+import { getAffiliateColor, getAffiliateColorDark } from '@/lib/theme';
 
 const LocationCard = ({ location, onDropClients, onCardClick }) => {
-    // We must recalculate current total from allocations because remainingCapacity 
-    // is now based on effectiveCapacity (tolerance), not total physical capacity.
-    // Or we can use location.effectiveCapacity.
-
     const validAllocations = location.allocations || [];
     const currentTotal = validAllocations.reduce((sum, a) => sum + a.amount, 0);
+    const totalCapacity = location.originalCapacity || location.capacity;
     const capacityToUse = location.effectiveCapacity || location.capacity;
     const isRestricted = location.effectiveCapacity && location.effectiveCapacity < location.originalCapacity;
 
-    const totalCapacity = location.originalCapacity || location.capacity;
-
-    // Calculate percentages relative to the Total Physical Capacity
+    // Percentages
     const usagePercentage = (currentTotal / totalCapacity) * 100;
     const targetPercentage = (capacityToUse / totalCapacity) * 100;
     const isOverTarget = currentTotal > capacityToUse;
 
-    // Group allocations by Affiliate for display
+    // Group allocations by Affiliate
     const byAffiliate = {};
     validAllocations.forEach(alloc => {
         if (!byAffiliate[alloc.affiliate]) {
@@ -27,6 +24,9 @@ const LocationCard = ({ location, onDropClients, onCardClick }) => {
         byAffiliate[alloc.affiliate].batteries += alloc.amount;
     });
 
+    const affiliateList = Object.entries(byAffiliate).sort((a, b) => b[1].batteries - a[1].batteries);
+
+    // Drag Logic
     const [isDragOver, setIsDragOver] = React.useState(false);
 
     const handleDragOver = (e) => {
@@ -53,61 +53,72 @@ const LocationCard = ({ location, onDropClients, onCardClick }) => {
 
     return (
         <div
+            className="card"
             onClick={onCardClick}
             onDragOver={handleDragOver}
             onDragLeave={handleDragLeave}
             onDrop={handleDrop}
             style={{
-                border: isDragOver ? '2px dashed #007bff' : '1px solid #ddd',
-                borderRadius: '8px',
-                padding: '16px',
-                margin: '0',
-                backgroundColor: isDragOver ? '#f0f8ff' : '#fff',
-                boxShadow: '0 2px 4px rgba(0,0,0,0.05)',
+                padding: '20px',
+                height: '100%',
                 display: 'flex',
-                cursor: 'pointer',
                 flexDirection: 'column',
-                transition: 'all 0.2s ease'
+                cursor: 'pointer',
+                border: isDragOver ? '2px dashed var(--color-primary)' : '1px solid var(--color-border)',
+                backgroundColor: isDragOver ? '#eff6ff' : 'var(--color-surface)',
+                position: 'relative'
             }}
         >
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                <h3 style={{ margin: 0, fontSize: '1.1rem' }}>{location.name}</h3>
-                <span style={{ fontSize: '0.85em', color: '#666', fontFamily: 'monospace' }}>{location.id}</span>
+            {/* Header */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '16px' }}>
+                <div>
+                    <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: '600', color: 'var(--color-text-primary)' }}>{location.name}</h3>
+                    <span style={{ fontSize: '0.75rem', color: 'var(--color-text-secondary)', fontFamily: 'monospace', backgroundColor: '#f1f5f9', padding: '2px 6px', borderRadius: '4px' }}>
+                        {location.id}
+                    </span>
+                </div>
+                <div style={{ textAlign: 'right' }}>
+                    <div style={{ fontSize: '1.25rem', fontWeight: '700', color: location.remainingCapacity < 0 ? 'var(--color-danger)' : 'var(--color-text-primary)' }}>
+                        {location.remainingCapacity.toLocaleString()}
+                    </div>
+                    <div style={{ fontSize: '0.75rem', color: 'var(--color-text-secondary)' }}>Available</div>
+                </div>
             </div>
 
-            <div style={{ marginBottom: '12px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85em', marginBottom: '4px' }}>
-                    <span>Used: {currentTotal.toLocaleString()}</span>
-                    <span>Max: {location.capacity.toLocaleString()}</span>
+            {/* Progress Bar (Stacked) */}
+            <div style={{ marginBottom: '16px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', marginBottom: '6px', color: 'var(--color-text-secondary)' }}>
+                    <span>{currentTotal.toLocaleString()} / {totalCapacity.toLocaleString()} Used</span>
+                    {isRestricted && <span style={{ color: 'var(--color-warning)' }}>Target: {Math.round(targetPercentage)}%</span>}
                 </div>
-                {isRestricted && (
-                    <div style={{ fontSize: '0.8em', color: '#dc3545', textAlign: 'right', marginBottom: '2px' }}>
-                        Target Cap: {capacityToUse.toLocaleString()}
-                    </div>
-                )}
-                <div style={{ marginBottom: '6px', fontSize: '0.9em', fontWeight: 'bold', color: location.remainingCapacity > 0 ? '#28a745' : '#6c757d', textAlign: 'right' }}>
-                    Remaining: {location.remainingCapacity.toLocaleString()}
-                </div>
+
                 <div style={{
                     height: '12px',
-                    backgroundColor: '#e9ecef',
+                    backgroundColor: '#e2e8f0',
                     borderRadius: '6px',
-                    position: 'relative',
-                    overflow: 'hidden'
+                    overflow: 'hidden',
+                    display: 'flex',
+                    position: 'relative'
                 }}>
-                    {/* Usage Bar */}
-                    <div style={{
-                        width: `${Math.min(usagePercentage, 100)}%`,
-                        backgroundColor: isOverTarget ? '#dc3545' : '#007bff',
-                        height: '100%',
-                        transition: 'width 0.3s ease',
-                        position: 'absolute',
-                        top: 0,
-                        left: 0,
-                        zIndex: 1
-                    }} />
+                    {/* Render segments for each affiliate */}
+                    {affiliateList.map(([affName, stats]) => {
+                        const width = (stats.batteries / totalCapacity) * 100;
+                        return (
+                            <div
+                                key={affName}
+                                style={{
+                                    width: `${width}%`,
+                                    backgroundColor: getAffiliateColor(affName),
+                                    height: '100%',
+                                    transition: 'width 0.3s ease',
+                                    borderRight: '1px solid rgba(255,255,255,0.2)' // visual separator
+                                }}
+                                title={`${affName}: ${stats.batteries}`}
+                            />
+                        );
+                    })}
 
-                    {/* Target Line Marker */}
+                    {/* Target Marker */}
                     {isRestricted && (
                         <div style={{
                             position: 'absolute',
@@ -115,34 +126,53 @@ const LocationCard = ({ location, onDropClients, onCardClick }) => {
                             top: 0,
                             bottom: 0,
                             width: '2px',
-                            backgroundColor: '#dc3545', // Red line
-                            zIndex: 2,
-                            boxShadow: '0 0 2px rgba(0,0,0,0.5)'
-                        }} title={`Target: ${capacityToUse.toLocaleString()}`} />
+                            backgroundColor: 'var(--color-danger)',
+                            zIndex: 10
+                        }} title={`Limit: ${capacityToUse}`} />
                     )}
                 </div>
             </div>
 
-            <div style={{ flex: 1, overflowY: 'auto', maxHeight: '300px', borderTop: '1px solid #eee', paddingTop: '8px' }}>
-                {Object.keys(byAffiliate).length === 0 ? (
-                    <div style={{ fontStyle: 'italic', color: '#999', fontSize: '0.85em' }}>Empty</div>
+            {/* Affiliate Breakdown (Pills/List) */}
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                {affiliateList.length === 0 ? (
+                    <div style={{
+                        flex: 1,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        color: '#cbd5e1',
+                        fontSize: '0.875rem',
+                        fontStyle: 'italic',
+                        minHeight: '60px',
+                        border: '1px dashed #e2e8f0',
+                        borderRadius: '0.5rem'
+                    }}>
+                        Ready for allocation
+                    </div>
                 ) : (
-                    <ul style={{ listStyle: 'none', padding: 0 }}>
-                        {Object.entries(byAffiliate).sort((a, b) => b[1].batteries - a[1].batteries).map(([affName, stats]) => (
-                            <li key={affName} style={{
-                                marginBottom: '8px',
-                                fontSize: '0.9em'
-                            }}>
-                                <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: '500' }}>
-                                    <span>{affName}</span>
-                                    <span>{stats.batteries.toLocaleString()}</span>
-                                </div>
-                                <div style={{ fontSize: '0.85em', color: '#666' }}>
-                                    {stats.count} Clients
-                                </div>
-                            </li>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                        {affiliateList.map(([affName, stats]) => (
+                            <div
+                                key={affName}
+                                style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    fontSize: '0.75rem',
+                                    padding: '4px 8px',
+                                    borderRadius: '12px',
+                                    backgroundColor: getAffiliateColor(affName),
+                                    color: '#1e293b', // Ensure contrast, or calc based on lightness
+                                    border: '1px solid rgba(0,0,0,0.05)',
+                                    fontWeight: '500'
+                                }}
+                                title={`${stats.count} clients`}
+                            >
+                                <span style={{ marginRight: '6px' }}>{affName}</span>
+                                <strong>{stats.batteries}</strong>
+                            </div>
                         ))}
-                    </ul>
+                    </div>
                 )}
             </div>
         </div>

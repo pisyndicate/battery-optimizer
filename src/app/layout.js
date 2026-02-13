@@ -1,4 +1,5 @@
 import './globals.css';
+import { ToastProvider } from '@/contexts/ToastContext';
 
 export const metadata = {
     title: 'Battery Allocation Optimizer',
@@ -8,7 +9,11 @@ export const metadata = {
 export default function RootLayout({ children }) {
     return (
         <html lang="en" suppressHydrationWarning>
-            <body suppressHydrationWarning>{children}</body>
+            <body suppressHydrationWarning>
+                <ToastProvider>
+                    {children}
+                </ToastProvider>
+            </body>
         </html>
     );
 }
