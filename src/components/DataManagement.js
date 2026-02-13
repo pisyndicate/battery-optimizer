@@ -270,6 +270,163 @@ function extractData(type, headers, rows, structured) {
     throw new Error('Could not determine data type');
 }
 
+// ─── Special Parser for Grouped Manifests (PDF/App Export) ─────────────
+function parseGroupedManifest(matrix) {
+    // Detect if this is likely our app's export
+    const isAppExport = matrix.slice(0, 5).some(row =>
+        row.some(c => String(c).includes('Allocation Manifest'))
+    );
+
+    // Find all header rows (Affiliate, Client, Units)
+    const headerIndices = [];
+    matrix.forEach((row, idx) => {
+        const str = row.map(c => String(c).toLowerCase().trim()).join(' ');
+        if (str.includes('affiliate') && str.includes('client') && str.includes('units')) {
+            headerIndices.push(idx);
+        }
+    });
+
+    if (headerIndices.length === 0) return null;
+
+    // If we have headers and it looks like an export (or multiple headers), try to parse
+    const clients = [];
+    const locations = [];
+    const locationMap = new Map(); // name -> id
+
+    headerIndices.forEach((headerIdx, i) => {
+        // Look for Location Name above the header
+        // Usually:
+        // Row -2: Location Name (ID)
+        // Row -1: Capacity info
+        // Row 0: Headers
+
+        let locName = 'Unknown Location';
+        let locId = null;
+        let locCap = 0;
+
+        // Try to find location info in previous 3-4 rows
+        for (let offset = 1; offset <= 5; offset++) {
+            const rowIdx = headerIdx - offset;
+            if (rowIdx < 0) break;
+            const row = matrix[rowIdx];
+            if (!row || row.length === 0) continue;
+
+            const line = row.join(' ').trim();
+
+            // Check for "Name (ID)" pattern
+            // e.g. "Main Site (LOC_123)"
+            const idMatch = line.match(/(.+)\s+\((.+)\)$/);
+            if (idMatch) {
+                locName = idMatch[1].trim();
+                locId = idMatch[2].trim();
+                break;
+            }
+
+            // Or just assume a non-empty line 2 rows up is the name if not capacity
+            if (!line.includes('/') && !line.includes('Rem:')) {
+                locName = line;
+                // If we found a name line, assume it's the one
+                // But check if it's "Allocation Manifest" title
+                if (locName !== 'Allocation Manifest') break;
+            }
+        }
+
+        // Try to find capacity
+        for (let offset = 1; offset <= 3; offset++) {
+            const rowIdx = headerIdx - offset;
+            if (rowIdx < 0) break;
+            const line = matrix[rowIdx].join(' ');
+            // "2000 / 5000"
+            if (line.includes('/')) {
+                const parts = line.split('/');
+                if (parts.length > 1) {
+                    const capPart = parts[1].split('(')[0]; // handle (Rem: ...)
+                    locCap = parseNum(capPart);
+                }
+            }
+        }
+
+        if (!locId) locId = `LOC_${locName.replace(/[^a-zA-Z0-9]/g, '_').toUpperCase()}`;
+
+        if (!locationMap.has(locName)) {
+            locations.push({ id: locId, name: locName, capacity: locCap || 1000 });
+            locationMap.set(locName, locId);
+        }
+
+        // Parse rows until next header or end
+        const nextHeaderIdx = headerIndices[i + 1] || matrix.length;
+
+        for (let r = headerIdx + 1; r < nextHeaderIdx; r++) {
+            const row = matrix[r];
+            if (!row || row.length === 0) continue;
+
+            // Skip if it looks like a footer or capacity line for next section
+            const line = row.join(' ');
+            if (line.includes('Total Locations') || line.includes('Allocation Manifest')) continue;
+
+            // Map columns based on fixed order of App Export: Affiliate, Client, Units
+            // Or use the header row to map?
+            // The app export headers are: Affiliate, Client, Units (indices 0, 1, 2 usually)
+
+            // But PDF parsing might shift columns.
+            // Let's try to map by value type? 
+            // Units is number.
+
+            // Simple approach: Assume column order Affiliate, Client, Units
+            // But PDF might merge or tab split.
+
+            let affiliate = '', client = '', units = 0;
+
+            if (row.length >= 3) {
+                affiliate = row[0];
+                client = row[1];
+                units = parseNum(row[2]);
+            } else if (row.length === 2) {
+                // Maybe Affiliate merged with Client? "Group A Client B" "10"
+                // Hard to say.
+                // Let's skip ambiguous rows or try basic logic
+                units = parseNum(row[row.length - 1]);
+                client = row[0];
+                affiliate = 'Unknown';
+            }
+
+            if (client && !isNaN(units)) {
+                clients.push({
+                    id: `c_pdf_${Math.random().toString(36).substr(2, 9)}`,
+                    name: client,
+                    batteries: units,
+                    affiliate: affiliate,
+                    // We need to bake the location into the client for the optimizer?
+                    // No, extractData returns { locations, clients }
+                    // But WAIT. The clients list doesn't have "location" property.
+                    // The optimizer allocates them.
+                    // IF we want to RESTORE the allocation, we need to PIN them?
+                    // Or just return the locations and clients, and let the optimizer re-allocate?
+                    // The user's goal is to IMPORT. 
+                    // If they import, the optimizer runs.
+                    // If we provide the Locations and Clients, the optimizer will likely put them back in the same place 
+                    // IF the logic is deterministic and constraints allow.
+                    // BUT if we want to force them, we should maybe generate "PinnedAllocations"?
+                    // The component returns `data` which is { locations, clients }.
+                    // It doesn't return pins.
+                    // So we just return the data.
+                });
+
+                // CRITICAL: We need to somehow tell the app that these clients belong to these locations?
+                // The import feature `onDataUpload` sets `customData`.
+                // `customData` = { locations, clients }.
+                // It does NOT set pins.
+                // So the optimizer will run fresh.
+                // This is acceptable behavior for "Import Data".
+                // If the user wants to *restore state*, they should use "Save/Load Project".
+                // But this "Allocation Manifest" -> Import is a nice bridge.
+            }
+        }
+    });
+
+    return { locations, clients };
+}
+
 
 // ═══════════════════════════════════════════════════════════
 //  COMPONENT
@@ -315,43 +472,51 @@ const DataManagement = ({ onDataUpload, onReset }) => {
 
             // Handle Matrix (CSV/Excel/PDF)
             if (matrix) {
-                if (matrix.length === 0) throw new Error('No data rows found in the file');
+                // Check for Grouped Manifest (PDF)
+                const groupedData = parseGroupedManifest(matrix);
+                if (groupedData) {
+                    type = 'manifest';
+                    headers = ['Derived from PDF'];
+                    rows = groupedData.clients; // just for preview count
+                    data = groupedData;
+                } else {
+                    if (matrix.length === 0) throw new Error('No data rows found in the file');
 
-                const res = findHeaderRow(matrix);
-                if (!res) {
-                    // Try to detect on first row just to throw the detailed error
-                    detectDataType(matrix[0].map(String), [], null);
-                    throw new Error('Could not find a valid header row in the first 25 lines.');
-                }
-
-                type = res.type;
-                headers = res.headers;
-                const headerIndex = res.index;
-
-                // Process rows
-                const lowerHeaders = headers.map(h => String(h).toLowerCase().trim());
-                rows = [];
-                for (let i = headerIndex + 1; i < matrix.length; i++) {
-                    const row = matrix[i];
-                    if (!row || row.length === 0 || row.every(c => !c)) continue;
-
-                    const entry = {};
-                    lowerHeaders.forEach((h, colIdx) => {
-                        const val = row[colIdx];
-                        entry[h] = val !== undefined ? String(val).trim() : '';
-                    });
-
-                    // Only add if at least one value is present
-                    if (Object.values(entry).some(v => v)) {
-                        rows.push(entry);
+                    const res = findHeaderRow(matrix);
+                    if (!res) {
+                        // Try to detect on first row just to throw the detailed error
+                        detectDataType(matrix[0].map(String), [], null);
+                        throw new Error('Could not find a valid header row in the first 25 lines.');
                     }
+
+                    type = res.type;
+                    headers = res.headers;
+                    const headerIndex = res.index;
+
+                    // Process rows
+                    const lowerHeaders = headers.map(h => String(h).toLowerCase().trim());
+                    rows = [];
+                    for (let i = headerIndex + 1; i < matrix.length; i++) {
+                        const row = matrix[i];
+                        if (!row || row.length === 0 || row.every(c => !c)) continue;
+
+                        const entry = {};
+                        lowerHeaders.forEach((h, colIdx) => {
+                            const val = row[colIdx];
+                            entry[h] = val !== undefined ? String(val).trim() : '';
+                        });
+
+                        if (Object.values(entry).some(v => v)) {
+                            rows.push(entry);
+                        }
+                    }
+                    data = extractData(type, headers, rows, structured);
                 }
             } else {
                 // JSON path
                 type = detectDataType(headers, rows, structured);
+                data = extractData(type, headers, rows, structured);
             }
-
-            const data = extractData(type, headers, rows, structured);
 
             setPreview({
                 fileName: file.name,
