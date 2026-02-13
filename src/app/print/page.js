@@ -4,11 +4,38 @@ import { INITIAL_LOCATIONS, INITIAL_CLIENTS } from '@/lib/data';
 import { allocateBatteries } from '@/lib/optimizer';
 
 export default function PrintPage() {
-    const locations = useMemo(() => INITIAL_LOCATIONS, []);
+    const [state, setState] = React.useState(null);
+
+    React.useEffect(() => {
+        const saved = localStorage.getItem('optimizer-transient-state');
+        if (saved) {
+            setState(JSON.parse(saved));
+        }
+    }, []);
+
+    const locations = useMemo(() => state?.customData?.locations || INITIAL_LOCATIONS, [state]);
+    const clients = useMemo(() => {
+        let baseClients = state?.customData?.clients || INITIAL_CLIENTS;
+        if (state?.useAdjustedCounts) {
+            const totalCapacity = locations.reduce((sum, l) => sum + l.capacity, 0);
+            const targetTotalAttributes = totalCapacity * (state.targetUtilization / 100);
+            const { adjustClientCounts } = require('@/lib/optimizer');
+            return adjustClientCounts(baseClients, Math.floor(targetTotalAttributes));
+        }
+        return baseClients;
+    }, [state, locations]);
 
     const { locations: allocatedLocations } = useMemo(() => {
-        return allocateBatteries(INITIAL_CLIENTS, locations);
-    }, [locations]);
+        const effectiveTolerance = state ? Math.max(0, 100 - state.targetUtilization) : 0;
+        return allocateBatteries(
+            clients,
+            locations,
+            state?.exclusiveAffiliates || [],
+            state?.pinnedAllocations || [],
+            effectiveTolerance,
+            0
+        );
+    }, [clients, locations, state]);
 
     const handleExportCSV = useCallback(() => {
         const headers = ['Location Name', 'Location Capacity', 'Client Name', 'Affiliate', 'Batteries'];

@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 
 const STORAGE_KEY = 'battery-optimizer-projects';
 const ACTIVE_KEY = 'battery-optimizer-active-project';
+const AUTOSAVE_KEY = 'battery-optimizer-autosave';
 
 // Get all saved projects from localStorage
 export const getProjects = () => {
@@ -63,10 +64,37 @@ export const clearAllProjects = () => {
     if (typeof window === 'undefined') return;
     localStorage.removeItem(STORAGE_KEY);
     localStorage.removeItem(ACTIVE_KEY);
+    localStorage.removeItem(AUTOSAVE_KEY);
+};
+
+export const getAutoSave = () => {
+    if (typeof window === 'undefined') return null;
+    try {
+        const data = localStorage.getItem(AUTOSAVE_KEY);
+        return data ? JSON.parse(data) : null;
+    } catch { return null; }
+};
+
+export const saveAutoSave = (state) => {
+    if (typeof window === 'undefined') return;
+    const project = {
+        id: 'autosave',
+        name: 'Auto-Save',
+        savedAt: new Date().toISOString(),
+        state
+    };
+    localStorage.setItem(AUTOSAVE_KEY, JSON.stringify(project));
+    return project;
+};
+
+export const deleteAutoSave = () => {
+    if (typeof window === 'undefined') return;
+    localStorage.removeItem(AUTOSAVE_KEY);
 };
 
 const ProjectManager = ({ onLoadState, onNewProject, currentStateFn }) => {
     const [projects, setProjects] = useState([]);
+    const [autoSave, setAutoSave] = useState(null);
     const [saveName, setSaveName] = useState('');
     const [showSaveInput, setShowSaveInput] = useState(false);
     const [activeId, setActiveId] = useState(null);
@@ -74,12 +102,14 @@ const ProjectManager = ({ onLoadState, onNewProject, currentStateFn }) => {
 
     useEffect(() => {
         setProjects(getProjects());
+        setAutoSave(getAutoSave());
         setActiveId(typeof window !== 'undefined' ? localStorage.getItem(ACTIVE_KEY) : null);
         setMounted(true);
     }, []);
 
     const refreshProjects = () => {
         setProjects(getProjects());
+        setAutoSave(getAutoSave());
         setActiveId(localStorage.getItem(ACTIVE_KEY));
     };
 
@@ -227,6 +257,97 @@ const ProjectManager = ({ onLoadState, onNewProject, currentStateFn }) => {
             >
                 ✨ New Project
             </button>
+
+            {/* Auto-Save Selection */}
+            <div style={{ marginBottom: '12px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                    <span style={{ fontSize: '0.7rem', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.5px', fontWeight: '600' }}>
+                        Temporary Saved
+                    </span>
+                    <button
+                        onClick={() => {
+                            const state = currentStateFn();
+                            if (state.customData || state.pinnedAllocations.length > 0) {
+                                saveAutoSave(state);
+                                setAutoSave(getAutoSave());
+                                alert('Work saved to temporary storage.');
+                            } else {
+                                alert('No data to save.');
+                            }
+                        }}
+                        style={{
+                            background: 'none',
+                            border: 'none',
+                            color: '#60a5fa',
+                            fontSize: '0.7rem',
+                            cursor: 'pointer',
+                            padding: 0,
+                            textDecoration: 'underline'
+                        }}
+                    >
+                        Save Now
+                    </button>
+                </div>
+
+                {autoSave ? (
+                    <div style={{
+                        padding: '10px 12px',
+                        borderRadius: '6px',
+                        border: '1px solid #334155',
+                        backgroundColor: 'rgba(245, 158, 11, 0.05)',
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center'
+                    }}>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontSize: '0.8rem', fontWeight: '600', color: '#f59e0b' }}>
+                                Recovery Point
+                            </div>
+                            <div style={{ fontSize: '0.65rem', color: '#64748b', marginTop: '2px' }}>
+                                {formatDate(autoSave.savedAt)}
+                            </div>
+                        </div>
+                        <div style={{ display: 'flex', gap: '4px' }}>
+                            <button
+                                onClick={() => handleLoad(autoSave)}
+                                style={{
+                                    padding: '4px 10px',
+                                    fontSize: '0.7rem',
+                                    backgroundColor: 'rgba(245, 158, 11, 0.15)',
+                                    color: '#fbbf24',
+                                    border: '1px solid rgba(245, 158, 11, 0.25)',
+                                    borderRadius: '4px',
+                                    cursor: 'pointer',
+                                    fontWeight: '600'
+                                }}
+                            >
+                                Restore
+                            </button>
+                            <button
+                                onClick={() => {
+                                    deleteAutoSave();
+                                    refreshProjects();
+                                }}
+                                style={{
+                                    padding: '4px 8px',
+                                    fontSize: '0.7rem',
+                                    backgroundColor: 'transparent',
+                                    color: '#64748b',
+                                    border: '1px solid #334155',
+                                    borderRadius: '4px',
+                                    cursor: 'pointer'
+                                }}
+                            >
+                                ✕
+                            </button>
+                        </div>
+                    </div>
+                ) : (
+                    <div style={{ fontSize: '0.75rem', color: '#64748b', fontStyle: 'italic', padding: '4px 0' }}>
+                        No temporary saves yet...
+                    </div>
+                )}
+            </div>
 
             {/* Saved Projects List */}
             {projects.length > 0 && (

@@ -30,24 +30,28 @@ export default function Home() {
     const [targetUtilization, setTargetUtilization] = useState(100);
     const [isSidebarOpen, setIsSidebarOpen] = useState(true);
 
-    // Auto-restore last active project on mount
+    // Ref for auto-save state to avoid interval reset and hook errors
+    const stateRef = React.useRef({ customData, pinnedAllocations, exclusiveAffiliates, targetUtilization, useAdjustedCounts });
+    stateRef.current = { customData, pinnedAllocations, exclusiveAffiliates, targetUtilization, useAdjustedCounts };
+
+    // Auto-save mechanism (every 5 minutes)
     useEffect(() => {
-        try {
-            const { getActiveProject } = require('@/components/ProjectManager');
-            const active = getActiveProject();
-            if (active && active.state) {
-                const s = active.state;
-                if (s.customData) setCustomData(s.customData);
-                if (s.pinnedAllocations) setPinnedAllocations(s.pinnedAllocations);
-                if (s.exclusiveAffiliates) setExclusiveAffiliates(s.exclusiveAffiliates);
-                if (s.targetUtilization != null) setTargetUtilization(s.targetUtilization);
-                if (s.useAdjustedCounts != null) setUseAdjustedCounts(s.useAdjustedCounts);
-                showToast(`Restored: ${active.name}`, 'info');
+        const interval = setInterval(() => {
+            try {
+                const { saveAutoSave } = require('@/components/ProjectManager');
+                const state = stateRef.current;
+                // Only auto-save if there is actually data loaded
+                if (state.customData || state.pinnedAllocations.length > 0) {
+                    saveAutoSave(state);
+                    showToast('Auto-save complete', 'info');
+                }
+            } catch (e) {
+                console.warn('Auto-save failed:', e);
             }
-        } catch (e) {
-            console.warn('Failed to restore project:', e);
-        }
-    }, []); // eslint-disable-line react-hooks/exhaustive-deps
+        }, 5 * 60 * 1000); // 5 minutes
+
+        return () => clearInterval(interval);
+    }, [showToast]); // Only showToast as dependency
 
     const toggleExclusive = (name) => {
         setExclusiveAffiliates(prev =>
@@ -171,6 +175,12 @@ export default function Home() {
             0
         );
     }, [clients, locations, exclusiveAffiliates, pinnedAllocations, runId, targetUtilization]);
+
+    // Persist transient state for Print Manifest
+    useEffect(() => {
+        const state = stateRef.current;
+        localStorage.setItem('optimizer-transient-state', JSON.stringify(state));
+    }, [customData, pinnedAllocations, exclusiveAffiliates, targetUtilization, useAdjustedCounts]);
 
     // FILTERED LOCATIONS for Search
     const filteredLocations = useMemo(() => {
