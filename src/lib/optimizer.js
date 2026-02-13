@@ -1,9 +1,155 @@
 import { INITIAL_CLIENTS, INITIAL_LOCATIONS } from './data';
 
+// Calculate affiliate spread score — total unique (affiliate, location) pairs
+const getSpreadScore = (locations) => {
+    let score = 0;
+    locations.forEach(loc => {
+        const affiliates = new Set(loc.allocations.map(a => a.affiliate));
+        score += affiliates.size;
+    });
+    return score;
+};
+
+// Post-processing: minimize affiliate spread via consolidation + swapping
+const optimizeAffiliateSpread = (locations, clients, exclusiveAffiliateNames, pinnedClientNames) => {
+    const MAX_ROUNDS = 10;
+
+    for (let round = 0; round < MAX_ROUNDS; round++) {
+        const startScore = getSpreadScore(locations);
+        let improved = false;
+
+        // ---- PASS A: Consolidation ----
+        // For each affiliate across multiple locations, try to move clients
+        // from minor locations into locations where the affiliate has more presence
+        const affiliateLocMap = {};
+        locations.forEach(loc => {
+            loc.allocations.forEach(alloc => {
+                if (!affiliateLocMap[alloc.affiliate]) affiliateLocMap[alloc.affiliate] = {};
+                if (!affiliateLocMap[alloc.affiliate][loc.id]) affiliateLocMap[alloc.affiliate][loc.id] = [];
+                affiliateLocMap[alloc.affiliate][loc.id].push(alloc);
+            });
+        });
+
+        for (const [affName, locMap] of Object.entries(affiliateLocMap)) {
+            if (exclusiveAffiliateNames.includes(affName)) continue; // Skip exclusive
+            const locIds = Object.keys(locMap);
+            if (locIds.length <= 1) continue; // Already consolidated
+
+            // Sort locations by how many batteries this affiliate has there (largest first)
+            locIds.sort((a, b) => {
+                const aTotal = locMap[a].reduce((s, al) => s + al.amount, 0);
+                const bTotal = locMap[b].reduce((s, al) => s + al.amount, 0);
+                return bTotal - aTotal;
+            });
+
+            // Try to move clients from smaller locations into larger ones
+            for (let i = 1; i < locIds.length; i++) {
+                const sourceLoc = locations.find(l => l.id === locIds[i]);
+                if (!sourceLoc) continue;
+                const clientsToMove = locMap[locIds[i]];
+
+                for (const alloc of [...clientsToMove]) {
+                    // Skip pinned clients
+                    if (pinnedClientNames.has(alloc.clientName)) continue;
+
+                    // Try to move to a location where this affiliate already has presence
+                    for (let j = 0; j < i; j++) {
+                        const targetLoc = locations.find(l => l.id === locIds[j]);
+                        if (!targetLoc) continue;
+                        if (targetLoc.exclusiveOwner && targetLoc.exclusiveOwner !== affName) continue;
+                        if (targetLoc.remainingCapacity >= alloc.amount) {
+                            // Move!
+                            sourceLoc.allocations = sourceLoc.allocations.filter(a => a !== alloc);
+                            sourceLoc.remainingCapacity += alloc.amount;
+                            targetLoc.allocations.push(alloc);
+                            targetLoc.remainingCapacity -= alloc.amount;
+                            targetLoc.affiliatesHosted.add(alloc.affiliate);
+
+                            // Update client record
+                            const client = clients.find(c => c.name === alloc.clientName);
+                            if (client) client.locationId = targetLoc.id;
+
+                            // Rebuild source affiliatesHosted
+                            sourceLoc.affiliatesHosted = new Set(sourceLoc.allocations.map(a => a.affiliate));
+                            improved = true;
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
+        // ---- PASS B: Client Swapping ----
+        // Find pairs of clients in different locations where swapping reduces spread
+        const locsWithAllocs = locations.filter(l => l.allocations.length > 0);
+
+        for (let li = 0; li < locsWithAllocs.length; li++) {
+            for (let lj = li + 1; lj < locsWithAllocs.length; lj++) {
+                const locA = locsWithAllocs[li];
+                const locB = locsWithAllocs[lj];
+
+                // Skip exclusive locations
+                if (locA.exclusiveOwner || locB.exclusiveOwner) continue;
+
+                for (let ai = 0; ai < locA.allocations.length; ai++) {
+                    const allocA = locA.allocations[ai];
+                    if (pinnedClientNames.has(allocA.clientName)) continue;
+
+                    for (let bi = 0; bi < locB.allocations.length; bi++) {
+                        const allocB = locB.allocations[bi];
+                        if (pinnedClientNames.has(allocB.clientName)) continue;
+                        if (allocA.affiliate === allocB.affiliate) continue; // Same affiliate, no benefit
+
+                        // Check if swap is capacity-feasible
+                        const deltaA = allocB.amount - allocA.amount; // Net change in locA
+                        const deltaB = allocA.amount - allocB.amount; // Net change in locB
+                        if (locA.remainingCapacity + allocA.amount - allocB.amount < 0) continue;
+                        if (locB.remainingCapacity + allocB.amount - allocA.amount < 0) continue;
+
+                        // Calculate spread score change
+                        // Current: count unique affiliates at each location
+                        const currentScore = getSpreadScore([locA, locB]);
+
+                        // Simulate swap
+                        locA.allocations[ai] = allocB;
+                        locB.allocations[bi] = allocA;
+                        const newScore = getSpreadScore([locA, locB]);
+
+                        if (newScore < currentScore) {
+                            // Swap is beneficial — commit it
+                            locA.remainingCapacity += allocA.amount - allocB.amount;
+                            locB.remainingCapacity += allocB.amount - allocA.amount;
+                            locA.affiliatesHosted = new Set(locA.allocations.map(a => a.affiliate));
+                            locB.affiliatesHosted = new Set(locB.allocations.map(a => a.affiliate));
+
+                            const clientA = clients.find(c => c.name === allocA.clientName);
+                            const clientB = clients.find(c => c.name === allocB.clientName);
+                            if (clientA) clientA.locationId = locB.id;
+                            if (clientB) clientB.locationId = locA.id;
+
+                            improved = true;
+                        } else {
+                            // Revert swap
+                            locA.allocations[ai] = allocA;
+                            locB.allocations[bi] = allocB;
+                        }
+                    }
+                }
+            }
+        }
+
+        const endScore = getSpreadScore(locations);
+        if (!improved || endScore >= startScore) break; // No improvement, stop
+    }
+
+    return { locations, clients };
+};
+
 export const allocateBatteries = (inputClients, inputLocations, exclusiveAffiliateNames = [], pinnedAllocations = [], toleranceMin = 0, toleranceMax = 0) => {
     const MAX_RETRIES = 10;
     let retryCount = 0;
     let capacityBoost = 0; // Progressively relax target on retries
+    const pinnedClientNames = new Set(pinnedAllocations.map(p => p.clientName));
 
     while (retryCount <= MAX_RETRIES) {
         // Deep copy fresh state each attempt
@@ -210,8 +356,8 @@ export const allocateBatteries = (inputClients, inputLocations, exclusiveAffilia
 
         const stillUnallocated = clients.filter(c => !c.allocated);
         if (stillUnallocated.length === 0) {
-            // All placed! Return results.
-            return { locations, clients };
+            // All placed! Optimize and return.
+            return optimizeAffiliateSpread(locations, clients, exclusiveAffiliateNames, pinnedClientNames);
         }
 
         // Reopen to full capacity
@@ -254,7 +400,7 @@ export const allocateBatteries = (inputClients, inputLocations, exclusiveAffilia
         // Check if everyone is placed
         const finalUnallocated = clients.filter(c => !c.allocated);
         if (finalUnallocated.length === 0) {
-            return { locations, clients };
+            return optimizeAffiliateSpread(locations, clients, exclusiveAffiliateNames, pinnedClientNames);
         }
 
         // Still have unplaced clients — retry with relaxed capacity
@@ -282,7 +428,7 @@ export const allocateBatteries = (inputClients, inputLocations, exclusiveAffilia
             client.locationId = loc.id;
         }
     }
-    return { locations, clients };
+    return optimizeAffiliateSpread(locations, clients, exclusiveAffiliateNames, pinnedClientNames);
 };
 
 export const adjustClientCounts = (clients, target = 18681) => {
