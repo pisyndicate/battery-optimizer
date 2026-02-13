@@ -6,11 +6,13 @@ import LocationCard from '@/components/LocationCard';
 import ValidationStats from '@/components/ValidationStats';
 import LocationSidebar from '@/components/LocationSidebar';
 import PinnedAllocationsList from '@/components/PinnedAllocationsList';
+import AffiliateAllocations from '@/components/AffiliateAllocations';
 
 import DataManagement from '@/components/DataManagement';
 
 export default function Home() {
     const [selectedLocation, setSelectedLocation] = useState(null);
+    const [viewMode, setViewMode] = useState('locations'); // 'locations' | 'affiliates'
     const [useAdjustedCounts, setUseAdjustedCounts] = useState(false);
     const [exclusiveAffiliates, setExclusiveAffiliates] = useState([]); // Array of strings e.g. ["Brown and Sterling"]
     const [pinnedAllocations, setPinnedAllocations] = useState([]); // Array of { clientName, locationId }
@@ -500,42 +502,79 @@ export default function Home() {
             </div>
 
             <section>
-                <h2 style={{ fontSize: '1.5rem', marginBottom: '16px' }}>Allocations</h2>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '16px' }}>
-                    {allocatedLocations.map(loc => (
-                        <LocationCard
-                            key={loc.id}
-                            location={loc}
-                            onDropClients={(locId, clientNames) => {
-                                // Validation
-                                const targetLoc = locations.find(l => l.id === locId);
-                                const startPins = pinnedAllocations.filter(p => p.locationId === locId && !clientNames.includes(p.clientName));
-                                const currentLoad = startPins.reduce((sum, p) => {
-                                    const c = clients.find(cl => cl.name === p.clientName);
-                                    return sum + (c ? c.batteries : 0);
-                                }, 0);
-                                const newLoad = clientNames.reduce((sum, name) => {
-                                    const c = clients.find(cl => cl.name === name);
-                                    return sum + (c ? c.batteries : 0);
-                                }, 0);
-
-                                if (currentLoad + newLoad > targetLoc.capacity) {
-                                    if (!confirm(`Capacity Warning: Adding these clients will exceed ${targetLoc.name}'s capacity. Proceed anyway?`)) {
-                                        return;
-                                    }
-                                }
-
-                                // Batch add pins directly
-                                setPinnedAllocations(prev => {
-                                    const filtered = prev.filter(p => !clientNames.includes(p.clientName));
-                                    const newPins = clientNames.map(name => ({ clientName: name, locationId: locId }));
-                                    return [...filtered, ...newPins];
-                                });
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                    <h2 style={{ fontSize: '1.5rem', margin: 0 }}>Allocations</h2>
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                        <button
+                            onClick={() => setViewMode('locations')}
+                            style={{
+                                padding: '8px 16px',
+                                borderRadius: '4px',
+                                border: '1px solid #007bff',
+                                backgroundColor: viewMode === 'locations' ? '#007bff' : 'white',
+                                color: viewMode === 'locations' ? 'white' : '#007bff',
+                                cursor: 'pointer',
+                                fontWeight: 'bold'
                             }}
-                            onCardClick={() => setSelectedLocation(loc)}
-                        />
-                    ))}
+                        >
+                            By Location
+                        </button>
+                        <button
+                            onClick={() => setViewMode('affiliates')}
+                            style={{
+                                padding: '8px 16px',
+                                borderRadius: '4px',
+                                border: '1px solid #007bff',
+                                backgroundColor: viewMode === 'affiliates' ? '#007bff' : 'white',
+                                color: viewMode === 'affiliates' ? 'white' : '#007bff',
+                                cursor: 'pointer',
+                                fontWeight: 'bold'
+                            }}
+                        >
+                            By Affiliate
+                        </button>
+                    </div>
                 </div>
+
+                {viewMode === 'locations' ? (
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '16px' }}>
+                        {allocatedLocations.map(loc => (
+                            <LocationCard
+                                key={loc.id}
+                                location={loc}
+                                onDropClients={(locId, clientNames) => {
+                                    // Validation
+                                    const targetLoc = locations.find(l => l.id === locId);
+                                    const startPins = pinnedAllocations.filter(p => p.locationId === locId && !clientNames.includes(p.clientName));
+                                    const currentLoad = startPins.reduce((sum, p) => {
+                                        const c = clients.find(cl => cl.name === p.clientName);
+                                        return sum + (c ? c.batteries : 0);
+                                    }, 0);
+                                    const newLoad = clientNames.reduce((sum, name) => {
+                                        const c = clients.find(cl => cl.name === name);
+                                        return sum + (c ? c.batteries : 0);
+                                    }, 0);
+
+                                    if (currentLoad + newLoad > targetLoc.capacity) {
+                                        if (!confirm(`Capacity Warning: Adding these clients will exceed ${targetLoc.name}'s capacity. Proceed anyway?`)) {
+                                            return;
+                                        }
+                                    }
+
+                                    // Batch add pins directly
+                                    setPinnedAllocations(prev => {
+                                        const filtered = prev.filter(p => !clientNames.includes(p.clientName));
+                                        const newPins = clientNames.map(name => ({ clientName: name, locationId: locId }));
+                                        return [...filtered, ...newPins];
+                                    });
+                                }}
+                                onCardClick={() => setSelectedLocation(loc)}
+                            />
+                        ))}
+                    </div>
+                ) : (
+                    <AffiliateAllocations locations={allocatedLocations} />
+                )}
             </section>
 
             {selectedLocation && (
