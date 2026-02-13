@@ -154,7 +154,7 @@ const LocationSidebar = ({ location, onClose }) => {
                                                 el.indeterminate = someSelected && !allSelected;
                                             }
                                         }}
-                                        onClick={(e) => {
+                                        onChange={(e) => {
                                             e.stopPropagation(); // Prevent collapse
                                             const allSelected = groupClients.every(c => selectedClients.has(c.name));
                                             const newSet = new Set(selectedClients);
