@@ -3,24 +3,29 @@ import React from 'react';
 const AffiliateAllocations = ({ locations, onAffiliateClick }) => {
     // 1. Aggregate Data
     const affiliateData = locations.reduce((acc, loc) => {
+        if (!loc.allocations || !Array.isArray(loc.allocations)) return acc;
+
         loc.allocations.forEach(alloc => {
-            if (!acc[alloc.affiliate]) {
-                acc[alloc.affiliate] = {
-                    name: alloc.affiliate,
+            const affiliateName = alloc.affiliate;
+            if (!affiliateName) return;
+
+            if (!acc[affiliateName]) {
+                acc[affiliateName] = {
+                    name: affiliateName,
                     totalBatteries: 0,
                     totalClients: 0,
-                    locations: {} // { locationId: { name, batteries, count, clients: [] } }
+                    locations: {}
                 };
             }
 
-            const aff = acc[alloc.affiliate];
-            aff.totalBatteries += alloc.amount;
+            const aff = acc[affiliateName];
+            aff.totalBatteries += (alloc.amount || 0);
             aff.totalClients += 1;
 
             if (!aff.locations[loc.id]) {
                 aff.locations[loc.id] = { name: loc.name, batteries: 0, count: 0, clients: [] };
             }
-            aff.locations[loc.id].batteries += alloc.amount;
+            aff.locations[loc.id].batteries += (alloc.amount || 0);
             aff.locations[loc.id].count += 1;
             aff.locations[loc.id].clients.push(alloc);
         });
