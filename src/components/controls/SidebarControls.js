@@ -663,7 +663,12 @@ const PinLocationGroup = ({ locId, locName, pins, totalUnits, setPinnedAllocatio
             </button>
 
             {expanded && (
-                <div style={{ padding: '2px 0 4px', borderTop: '1px solid rgba(99,102,241,0.08)' }}>
+                <div style={{
+                    padding: '2px 0 4px',
+                    borderTop: '1px solid rgba(99,102,241,0.08)',
+                    maxHeight: '400px',
+                    overflowY: 'auto'
+                }}>
                     {pins.map(pin => (
                         <div key={pin.clientName} style={{
                             display: 'flex',
