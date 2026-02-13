@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 
-const LocationSidebar = ({ location, onClose, pinnedAllocations = [], setPinnedAllocations }) => {
+const LocationSidebar = ({ location, onClose, pinnedAllocations = [], setPinnedAllocations, onUpdateBatteries }) => {
     const isPinned = (clientName) => pinnedAllocations.some(p => p.clientName === clientName && p.locationId === location.id);
     const togglePin = (clientName) => {
         if (isPinned(clientName)) {
@@ -11,6 +11,7 @@ const LocationSidebar = ({ location, onClose, pinnedAllocations = [], setPinnedA
     };
     const [selectedClients, setSelectedClients] = useState(new Set());
     const [collapsedGroups, setCollapsedGroups] = useState(new Set());
+    const [editingClient, setEditingClient] = useState(null); // { name, value }
 
     const toggleGroup = (affiliate) => {
         const newSet = new Set(collapsedGroups);
@@ -215,7 +216,58 @@ const LocationSidebar = ({ location, onClose, pinnedAllocations = [], setPinnedA
                                             <div style={{ flex: 1, display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.9em' }}>
                                                 <span>{c.name}</span>
                                                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                                    <span style={{ color: '#666' }}>{c.batteries}</span>
+                                                    {editingClient?.name === c.name ? (
+                                                        <input
+                                                            type="number"
+                                                            value={editingClient.value}
+                                                            onChange={(e) => setEditingClient({ ...editingClient, value: e.target.value })}
+                                                            onBlur={() => {
+                                                                const val = parseInt(editingClient.value, 10);
+                                                                if (!isNaN(val) && val >= 0 && onUpdateBatteries) {
+                                                                    onUpdateBatteries(c.name, val);
+                                                                }
+                                                                setEditingClient(null);
+                                                            }}
+                                                            onKeyDown={(e) => {
+                                                                if (e.key === 'Enter') e.target.blur();
+                                                                if (e.key === 'Escape') setEditingClient(null);
+                                                            }}
+                                                            autoFocus
+                                                            style={{
+                                                                width: '50px',
+                                                                padding: '2px 4px',
+                                                                fontSize: '0.85em',
+                                                                border: '1px solid #6366f1',
+                                                                borderRadius: '3px',
+                                                                backgroundColor: '#f8f9ff',
+                                                                color: '#333',
+                                                                textAlign: 'right',
+                                                                outline: 'none'
+                                                            }}
+                                                            onClick={(e) => e.stopPropagation()}
+                                                        />
+                                                    ) : (
+                                                        <span
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                if (onUpdateBatteries) {
+                                                                    setEditingClient({ name: c.name, value: String(c.batteries) });
+                                                                }
+                                                            }}
+                                                            title={onUpdateBatteries ? 'Click to edit' : ''}
+                                                            style={{
+                                                                color: '#666',
+                                                                cursor: onUpdateBatteries ? 'pointer' : 'default',
+                                                                padding: '1px 3px',
+                                                                borderRadius: '3px',
+                                                                transition: 'background-color 0.15s'
+                                                            }}
+                                                            onMouseEnter={e => { if (onUpdateBatteries) e.currentTarget.style.backgroundColor = '#eef2ff'; }}
+                                                            onMouseLeave={e => { e.currentTarget.style.backgroundColor = 'transparent'; }}
+                                                        >
+                                                            {c.batteries}
+                                                        </span>
+                                                    )}
                                                     <button
                                                         onClick={(e) => { e.stopPropagation(); togglePin(c.name); }}
                                                         title={isPinned(c.name) ? 'Unpin from this location' : 'Pin to this location'}

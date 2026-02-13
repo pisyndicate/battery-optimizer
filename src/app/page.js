@@ -184,6 +184,20 @@ export default function Home() {
         localStorage.setItem('optimizer-transient-state', JSON.stringify(state));
     }, [customData, pinnedAllocations, exclusiveAffiliates, targetUtilization, useAdjustedCounts]);
 
+    // Update a client's battery count
+    const updateClientBatteries = (clientName, newBatteries) => {
+        setCustomData(prev => {
+            if (!prev || !prev.clients) return prev;
+            return {
+                ...prev,
+                clients: prev.clients.map(c =>
+                    c.name === clientName ? { ...c, batteries: newBatteries } : c
+                )
+            };
+        });
+        setRunId(r => r + 1);
+    };
+
     // FILTERED LOCATIONS for Search
     const filteredLocations = useMemo(() => {
         if (!globalSearch.trim()) return allocatedLocations;
@@ -464,6 +478,7 @@ export default function Home() {
                     onClose={() => setSelectedLocation(null)}
                     pinnedAllocations={pinnedAllocations}
                     setPinnedAllocations={setPinnedAllocations}
+                    onUpdateBatteries={updateClientBatteries}
                 />
             )}
 
