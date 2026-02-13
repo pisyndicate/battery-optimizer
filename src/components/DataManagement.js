@@ -271,6 +271,7 @@ function extractData(type, headers, rows, structured) {
 }
 
 // ─── Special Parser for Grouped Manifests (PDF/App Export) ─────────────
+// ─── Special Parser for Grouped Manifests (PDF/App Export) ─────────────
 function parseGroupedManifest(matrix) {
     // Detect if this is likely our app's export
     const isAppExport = matrix.slice(0, 5).some(row =>
@@ -288,23 +289,20 @@ function parseGroupedManifest(matrix) {
 
     if (headerIndices.length === 0) return null;
 
-    // If we have headers and it looks like an export (or multiple headers), try to parse
     const clients = [];
     const locations = [];
     const locationMap = new Map(); // name -> id
 
-    headerIndices.forEach((headerIdx, i) => {
-        // Look for Location Name above the header
-        // Usually:
-        // Row -2: Location Name (ID)
-        // Row -1: Capacity info
-        // Row 0: Headers
+    // Keep track of last location to handle page breaks where title isn't repeated
+    let lastLocId = null;
+    let lastLocName = null;
 
-        let locName = 'Unknown Location';
+    headerIndices.forEach((headerIdx, i) => {
+        let locName = null;
         let locId = null;
         let locCap = 0;
 
-        // Try to find location info in previous 3-4 rows
+        // Search upwards for "Name (ID)" pattern
         for (let offset = 1; offset <= 5; offset++) {
             const rowIdx = headerIdx - offset;
             if (rowIdx < 0) break;
@@ -313,8 +311,12 @@ function parseGroupedManifest(matrix) {
 
             const line = row.join(' ').trim();
 
+            // Ignore capacity/summary lines
+            if (line.includes('/') || line.includes('Rem:') || line.includes('Total Locations')) continue;
+            // Ignore dates
+            if (line.match(/\d+\/\d+\/\d+/)) continue;
+
             // Check for "Name (ID)" pattern
-            // e.g. "Main Site (LOC_123)"
             const idMatch = line.match(/(.+)\s+\((.+)\)$/);
             if (idMatch) {
                 locName = idMatch[1].trim();
@@ -322,35 +324,64 @@ function parseGroupedManifest(matrix) {
                 break;
             }
 
-            // Or just assume a non-empty line 2 rows up is the name if not capacity
-            if (!line.includes('/') && !line.includes('Rem:')) {
+            // Partial ID match or just Name
+            if (line.startsWith('(') && line.endsWith(')')) continue; // Orphan ID
+
+            // Fallback: This line is likely the name if it's text
+            // Avoid capturing garbage
+            if (locName === null &&
+                line !== 'Allocation Manifest' &&
+                !line.includes('Page ') &&
+                line.length > 2) {
                 locName = line;
-                // If we found a name line, assume it's the one
-                // But check if it's "Allocation Manifest" title
-                if (locName !== 'Allocation Manifest') break;
             }
         }
 
-        // Try to find capacity
-        for (let offset = 1; offset <= 3; offset++) {
-            const rowIdx = headerIdx - offset;
-            if (rowIdx < 0) break;
-            const line = matrix[rowIdx].join(' ');
-            // "2000 / 5000"
-            if (line.includes('/')) {
-                const parts = line.split('/');
-                if (parts.length > 1) {
-                    const capPart = parts[1].split('(')[0]; // handle (Rem: ...)
-                    locCap = parseNum(capPart);
+        // If we found a new location header, register it
+        if (locName) {
+            // Check if it's the SAME as last one (repeated title on new page)
+            if (lastLocName && locName === lastLocName) {
+                locId = lastLocId;
+            } else {
+                if (!locId) locId = `LOC_${locName.replace(/[^a-zA-Z0-9]/g, '_').toUpperCase()}`;
+
+                if (!locationMap.has(locName)) {
+                    // Try to find capacity
+                    for (let offset = 1; offset <= 3; offset++) {
+                        const r = matrix[headerIdx - offset];
+                        if (r) {
+                            const l = r.join(' ');
+                            if (l.includes('/')) {
+                                const parts = l.split('/');
+                                if (parts.length > 1) {
+                                    const cap = parseNum(parts[1].split('(')[0]);
+                                    if (!isNaN(cap)) locCap = cap;
+                                }
+                            }
+                        }
+                    }
+
+                    locations.push({ id: locId, name: locName, capacity: locCap || 1000 });
+                    locationMap.set(locName, locId);
+                } else {
+                    locId = locationMap.get(locName);
                 }
             }
-        }
-
-        if (!locId) locId = `LOC_${locName.replace(/[^a-zA-Z0-9]/g, '_').toUpperCase()}`;
-
-        if (!locationMap.has(locName)) {
-            locations.push({ id: locId, name: locName, capacity: locCap || 1000 });
-            locationMap.set(locName, locId);
+            lastLocId = locId;
+            lastLocName = locName;
+        } else {
+            // No header found above this table. Inherit previous!
+            if (lastLocId) {
+                locId = lastLocId;
+            } else {
+                // Truly unknown (start of file?)
+                locId = 'LOC_UNKNOWN';
+                if (!locationMap.has('Unknown Location')) {
+                    locations.push({ id: locId, name: 'Unknown Location', capacity: 0 });
+                    locationMap.set('Unknown Location', locId);
+                }
+                lastLocId = locId;
+            }
         }
 
         // Parse rows until next header or end
@@ -360,20 +391,13 @@ function parseGroupedManifest(matrix) {
             const row = matrix[r];
             if (!row || row.length === 0) continue;
 
-            // Skip if it looks like a footer or capacity line for next section
+            // Skip footer/summary lines
             const line = row.join(' ');
-            if (line.includes('Total Locations') || line.includes('Allocation Manifest')) continue;
-
-            // Map columns based on fixed order of App Export: Affiliate, Client, Units
-            // Or use the header row to map?
-            // The app export headers are: Affiliate, Client, Units (indices 0, 1, 2 usually)
-
-            // But PDF parsing might shift columns.
-            // Let's try to map by value type? 
-            // Units is number.
-
-            // Simple approach: Assume column order Affiliate, Client, Units
-            // But PDF might merge or tab split.
+            if (line.includes('Total Locations') ||
+                line.includes('Allocation Manifest') ||
+                line.startsWith('Page ') ||
+                line.match(/^\d+\/\d+\/\d+/) // Date footer
+            ) continue;
 
             let affiliate = '', client = '', units = 0;
 
@@ -382,44 +406,29 @@ function parseGroupedManifest(matrix) {
                 client = row[1];
                 units = parseNum(row[2]);
             } else if (row.length === 2) {
-                // Maybe Affiliate merged with Client? "Group A Client B" "10"
-                // Hard to say.
-                // Let's skip ambiguous rows or try basic logic
-                units = parseNum(row[row.length - 1]);
-                client = row[0];
-                affiliate = 'Unknown';
+                // Try to guess
+                const last = parseNum(row[row.length - 1]);
+                if (!isNaN(last)) {
+                    units = last;
+                    client = row[0];
+                }
             }
+
+            // Filter out Ghost Clients (Headers repeated or keywords in data)
+            const cLower = (client || '').toLowerCase();
+            if (cLower === 'client' ||
+                cLower === 'units' ||
+                cLower === 'affiliate' ||
+                cLower.includes('page ') ||
+                cLower.includes('generated')) continue;
 
             if (client && !isNaN(units)) {
                 clients.push({
                     id: `c_pdf_${Math.random().toString(36).substr(2, 9)}`,
                     name: client,
                     batteries: units,
-                    affiliate: affiliate,
-                    // We need to bake the location into the client for the optimizer?
-                    // No, extractData returns { locations, clients }
-                    // But WAIT. The clients list doesn't have "location" property.
-                    // The optimizer allocates them.
-                    // IF we want to RESTORE the allocation, we need to PIN them?
-                    // Or just return the locations and clients, and let the optimizer re-allocate?
-                    // The user's goal is to IMPORT. 
-                    // If they import, the optimizer runs.
-                    // If we provide the Locations and Clients, the optimizer will likely put them back in the same place 
-                    // IF the logic is deterministic and constraints allow.
-                    // BUT if we want to force them, we should maybe generate "PinnedAllocations"?
-                    // The component returns `data` which is { locations, clients }.
-                    // It doesn't return pins.
-                    // So we just return the data.
+                    affiliate: affiliate || 'Unknown'
                 });
-
-                // CRITICAL: We need to somehow tell the app that these clients belong to these locations?
-                // The import feature `onDataUpload` sets `customData`.
-                // `customData` = { locations, clients }.
-                // It does NOT set pins.
-                // So the optimizer will run fresh.
-                // This is acceptable behavior for "Import Data".
-                // If the user wants to *restore state*, they should use "Save/Load Project".
-                // But this "Allocation Manifest" -> Import is a nice bridge.
             }
         }
     });
