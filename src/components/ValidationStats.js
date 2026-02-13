@@ -3,17 +3,33 @@ import React, { useState } from 'react';
 const ValidationStats = ({ locations, totalClients, unallocatedList = [] }) => {
     const [selectedClients, setSelectedClients] = useState(new Set());
 
-    // Flatten all allocations
-    const allAllocations = locations.flatMap(l => l.allocations);
+    // Flatten all allocations with location info
+    const allAllocations = locations.flatMap(l => l.allocations.map(a => ({ ...a, locationName: l.name })));
 
-    // Count occurrences of each Client ID
-    const clientCounts = {};
+    // Count occurrences of each Client ID and track locations
+    const clientMap = {};
     allAllocations.forEach(a => {
-        clientCounts[a.clientId] = (clientCounts[a.clientId] || 0) + 1;
+        if (!clientMap[a.clientId]) {
+            clientMap[a.clientId] = {
+                id: a.clientId,
+                name: a.clientName,
+                count: 0,
+                locations: []
+            };
+        }
+        clientMap[a.clientId].count += 1;
+        clientMap[a.clientId].locations.push(a.locationName);
     });
 
-    const allocatedClientCount = Object.keys(clientCounts).length;
-    const splitClients = Object.values(clientCounts).filter(count => count > 1).length;
+    const allocatedClientCount = Object.keys(clientMap).length;
+
+    // Only count as "split" if they are in more than 1 UNIQUE location
+    const splitClientList = Object.values(clientMap).filter(c => {
+        const uniqueLocs = new Set(c.locations);
+        return uniqueLocs.size > 1;
+    });
+
+    const splitClients = splitClientList.length;
     const unallocatedCount = unallocatedList.length;
 
     const isHealthy = splitClients === 0 && unallocatedCount === 0;
@@ -75,6 +91,20 @@ const ValidationStats = ({ locations, totalClients, unallocatedList = [] }) => {
                     <strong>Unallocated:</strong> {unallocatedCount} Clients ({unallocatedList.reduce((sum, c) => sum + c.batteries, 0).toLocaleString()} Batteries)
                 </div>
             </div>
+
+            {/* Split Clients List */}
+            {splitClients > 0 && (
+                <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: '1px solid rgba(0,0,0,0.1)' }}>
+                    <h4 style={{ margin: '0 0 8px 0', fontSize: '0.95em', color: '#721c24' }}>Split Client Details:</h4>
+                    <ul style={{ margin: 0, padding: 0, listStyle: 'none', maxHeight: '150px', overflowY: 'auto' }}>
+                        {splitClientList.map(client => (
+                            <li key={client.id} style={{ padding: '4px 0', borderBottom: '1px solid rgba(0,0,0,0.05)' }}>
+                                <strong>{client.name}</strong> is in: {client.locations.join(', ')}
+                            </li>
+                        ))}
+                    </ul>
+                </div>
+            )}
 
             {unallocatedCount > 0 && (
                 <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: '1px solid rgba(0,0,0,0.1)' }}>

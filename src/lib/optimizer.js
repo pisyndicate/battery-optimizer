@@ -165,7 +165,7 @@ export const allocateBatteries = (inputClients, inputLocations, exclusiveAffilia
                 effectiveCapacity: effectiveCapacity,
                 remainingCapacity: effectiveCapacity,
                 affiliatesHosted: new Set(),
-                exclusiveOwner: null
+                exclusiveOwners: new Set() // Changed from string to Set
             };
         });
 
@@ -178,7 +178,9 @@ export const allocateBatteries = (inputClients, inputLocations, exclusiveAffilia
             pinnedAllocations.forEach(pin => {
                 const client = clients.find(c => c.name === pin.clientName);
                 const location = locations.find(l => l.id === pin.locationId);
-                if (client && location) {
+
+                // Safety check: Don't allocate if already allocated (prevents duplicate pins issue)
+                if (client && location && !client.allocated) {
                     location.allocations.push({
                         clientId: client.id,
                         clientName: client.name,
@@ -190,7 +192,7 @@ export const allocateBatteries = (inputClients, inputLocations, exclusiveAffilia
                     client.allocated = true;
                     client.locationId = location.id;
                     if (exclusiveAffiliateNames.includes(client.affiliate)) {
-                        location.exclusiveOwner = client.affiliate;
+                        location.exclusiveOwners.add(client.affiliate);
                     }
                 }
             });
@@ -215,8 +217,10 @@ export const allocateBatteries = (inputClients, inputLocations, exclusiveAffilia
 
         for (let group of exclusiveGroups) {
             let possibleLocs = locations.filter(loc => {
-                if (loc.exclusiveOwner && loc.exclusiveOwner !== group.name) return false;
-                return loc.allocations.length === 0 || loc.exclusiveOwner === group.name;
+                // If it has owners, we must be one of them
+                if (loc.exclusiveOwners.size > 0 && !loc.exclusiveOwners.has(group.name)) return false;
+                // If empty or already owned by us, it's a candidate
+                return loc.allocations.length === 0 || loc.exclusiveOwners.has(group.name);
             });
 
             // Try to fit whole group in one location (best fit)
@@ -242,7 +246,7 @@ export const allocateBatteries = (inputClients, inputLocations, exclusiveAffilia
                         client.allocated = true;
                         client.locationId = loc.id;
                     });
-                    loc.exclusiveOwner = group.name;
+                    loc.exclusiveOwners.add(group.name);
                     placed = true;
                     break;
                 }
@@ -250,7 +254,14 @@ export const allocateBatteries = (inputClients, inputLocations, exclusiveAffilia
 
             // Split across multiple exclusive locations if needed
             if (!placed) {
-                possibleLocs.sort((a, b) => b.remainingCapacity - a.remainingCapacity);
+                // Prioritize affinity locations, then largest capacity
+                possibleLocs.sort((a, b) => {
+                    const aAff = affinityLocIds.has(a.id) ? 1 : 0;
+                    const bAff = affinityLocIds.has(b.id) ? 1 : 0;
+                    if (aAff !== bAff) return bAff - aAff;
+                    return b.remainingCapacity - a.remainingCapacity;
+                });
+
                 let remaining = [...group.clients];
                 for (let loc of possibleLocs) {
                     if (remaining.length === 0) break;
@@ -267,7 +278,7 @@ export const allocateBatteries = (inputClients, inputLocations, exclusiveAffilia
                             forLater.push(client);
                         }
                     }
-                    if (loc.allocations.length > 0) loc.exclusiveOwner = group.name;
+                    if (loc.allocations.length > 0) loc.exclusiveOwners.add(group.name);
                     remaining = forLater;
                 }
             }
@@ -288,7 +299,8 @@ export const allocateBatteries = (inputClients, inputLocations, exclusiveAffilia
             .sort((a, b) => b.totalDemand - a.totalDemand); // Largest first
 
         for (let group of nonExclusiveGroups) {
-            let possibleLocs = locations.filter(loc => !loc.exclusiveOwner);
+            // Can only use locations that have NO exclusive owners
+            let possibleLocs = locations.filter(loc => loc.exclusiveOwners.size === 0);
 
             // Find affinity locations (where this affiliate already has pinned clients)
             const affinityLocIds = new Set();
@@ -372,9 +384,22 @@ export const allocateBatteries = (inputClients, inputLocations, exclusiveAffilia
             const isExclusive = exclusiveAffiliateNames.includes(client.affiliate);
             let possibleLocs = locations.filter(loc => {
                 if (loc.remainingCapacity < client.batteries) return false;
-                if (loc.exclusiveOwner && loc.exclusiveOwner !== client.affiliate) return false;
-                if (isExclusive && loc.allocations.length > 0 && loc.exclusiveOwner !== client.affiliate) return false;
-                if (!isExclusive && loc.exclusiveOwner) return false;
+
+                // Exclusivity checks
+                if (loc.exclusiveOwners.size > 0) {
+                    // Location is exclusive -> only owners can play
+                    return loc.exclusiveOwners.has(client.affiliate);
+                } else if (isExclusive) {
+                    // Location is free, but client is exclusive -> prefer empty or owned by self?
+                    // Actually, if it's free, can we take it? Yes.
+                    // But if it has others?
+                    // If isExclusive, we should only go to:
+                    // 1. Locations we own
+                    // 2. Locations that are empty (and we become owner)
+                    // 3. Locations that allow mixed? (No, exclusive means exclusive)
+                    return loc.allocations.length === 0;
+                }
+
                 return true;
             });
 
@@ -393,7 +418,7 @@ export const allocateBatteries = (inputClients, inputLocations, exclusiveAffilia
                 loc.affiliatesHosted.add(client.affiliate);
                 client.allocated = true;
                 client.locationId = loc.id;
-                if (isExclusive) loc.exclusiveOwner = client.affiliate;
+                if (isExclusive) loc.exclusiveOwners.add(client.affiliate);
             }
         }
 
@@ -412,9 +437,14 @@ export const allocateBatteries = (inputClients, inputLocations, exclusiveAffilia
     // If we exhausted retries, return best effort
     console.warn("Max retries reached. Returning best effort allocation.");
     let clients = JSON.parse(JSON.stringify(inputClients));
+    // Reset locations for final greedy pass, but we lose exclusive constraints...
+    // Actually, for the "best effort" fallback, we should just fill holes.
+    // Simplifying: Just return what we had or do a simple greedy fill without exclusivity constraints to avoid crash?
+    // Let's stick to simple greedy if all else fails, confusing but at least allocates.
+    // Re-mapped instructions simplify this:
     let locations = JSON.parse(JSON.stringify(inputLocations)).map(l => ({
         ...l, allocations: [], originalCapacity: l.capacity, effectiveCapacity: l.capacity,
-        remainingCapacity: l.capacity, affiliatesHosted: new Set(), exclusiveOwner: null
+        remainingCapacity: l.capacity, affiliatesHosted: new Set(), exclusiveOwners: new Set()
     }));
     // One final full-capacity greedy pass
     clients.sort((a, b) => b.batteries - a.batteries);
