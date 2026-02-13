@@ -8,6 +8,7 @@ import LocationSidebar from '@/components/LocationSidebar';
 import AffiliateSidebar from '@/components/AffiliateSidebar';
 import PinnedAllocationsList from '@/components/PinnedAllocationsList';
 import AffiliateAllocations from '@/components/AffiliateAllocations';
+import AffiliateSummary from '@/components/AffiliateSummary';
 
 import DataManagement from '@/components/DataManagement';
 
@@ -149,6 +150,8 @@ export default function Home() {
                 totalClients={clients.length}
                 unallocatedList={unallocatedClients}
             />
+
+            <AffiliateSummary locations={allocatedLocations} />
 
             <div style={{ marginBottom: '24px', padding: '16px', backgroundColor: '#e9ecef', borderRadius: '8px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
