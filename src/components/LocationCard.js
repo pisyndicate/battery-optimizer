@@ -78,8 +78,8 @@ const LocationCard = ({ location, onDropClients, onCardClick }) => {
                     </span>
                 </div>
                 <div style={{ textAlign: 'right' }}>
-                    <div style={{ fontSize: '1.25rem', fontWeight: '700', color: location.remainingCapacity < 0 ? 'var(--color-danger)' : 'var(--color-text-primary)' }}>
-                        {location.remainingCapacity.toLocaleString()}
+                    <div style={{ fontSize: '1.25rem', fontWeight: '700', color: (totalCapacity - currentTotal) < 0 ? 'var(--color-danger)' : 'var(--color-text-primary)' }}>
+                        {(totalCapacity - currentTotal).toLocaleString()}
                     </div>
                     <div style={{ fontSize: '0.75rem', color: 'var(--color-text-secondary)' }}>Available</div>
                 </div>

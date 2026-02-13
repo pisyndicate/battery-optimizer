@@ -42,7 +42,7 @@ const DashboardLayout = ({
                     {sidebarContent}
                 </div>
 
-                <div style={{ padding: '16px', borderTop: '1px solid rgba(255,255,255,0.1)', fontSize: '0.75rem', color: '#64748b', textAlign: 'center' }}>
+                <div style={{ padding: '16px', borderTop: '1px solid rgba(255,255,255,0.1)', fontSize: '0.75rem', color: '#94a3b8', textAlign: 'center' }}>
                     v2.0.0
                 </div>
             </aside>
@@ -62,7 +62,7 @@ const DashboardLayout = ({
                     boxShadow: 'var(--shadow-sm)',
                     zIndex: 10
                 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flex: 1 }}>
                         {setIsSidebarOpen && (
                             <button
                                 onClick={() => setIsSidebarOpen(!isSidebarOpen)}

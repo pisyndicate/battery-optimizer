@@ -1,37 +1,87 @@
 'use client';
-import React, { useMemo } from 'react';
+import React, { useMemo, useCallback } from 'react';
 import { INITIAL_LOCATIONS, INITIAL_CLIENTS } from '@/lib/data';
 import { allocateBatteries } from '@/lib/optimizer';
 
 export default function PrintPage() {
-    // Always use the non-scaled counts for the base list? 
-    // User probably wants the FINAL (Scaled) list if they have been using that feature.
-    // But for a static print view, let's default to the Raw counts unless we pass a param?
-    // Use raw for now to match the "18112" vs "18681" unless I want to duplicate logic.
-    // Actually, let's just use the logic with default (raw). 
-    // If the user wants the scaled numbers printed, they might need the toggle.
-    // I'll add a simple toggle for print view too, default to true (Scaled) since that's the goal?
-    // Let's stick to RAW first to be safe, or just provide the logic to Scaled since the target is 18681.
-
-    // Use raw for transparency of "Original Data"
     const locations = useMemo(() => INITIAL_LOCATIONS, []);
 
-    // For print view, let's do the Allocation.
     const { locations: allocatedLocations } = useMemo(() => {
         return allocateBatteries(INITIAL_CLIENTS, locations);
     }, [locations]);
 
+    const handleExportCSV = useCallback(() => {
+        const headers = ['Location Name', 'Location Capacity', 'Client Name', 'Affiliate', 'Batteries'];
+        const rows = [headers.join(',')];
+
+        allocatedLocations.forEach(loc => {
+            loc.allocations.forEach(alloc => {
+                const safeLoc = `"${loc.name.replace(/"/g, '""')}"`;
+                const safeClient = `"${alloc.clientName.replace(/"/g, '""')}"`;
+                const safeAffiliate = `"${alloc.affiliate.replace(/"/g, '""')}"`;
+                rows.push(`${safeLoc},${loc.capacity},${safeClient},${safeAffiliate},${alloc.amount}`);
+            });
+        });
+
+        const csvContent = rows.join('\n');
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.setAttribute('href', url);
+        link.setAttribute('download', `battery_manifest_${new Date().toISOString().slice(0, 10)}.csv`);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    }, [allocatedLocations]);
+
     return (
         <div style={{ padding: '24px', fontFamily: 'sans-serif', color: '#000' }}>
-            <header style={{ marginBottom: '24px', borderBottom: '2px solid #000', paddingBottom: '12px', display: 'flex', justifyContent: 'space-between' }}>
+            <header style={{ marginBottom: '24px', borderBottom: '2px solid #000', paddingBottom: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <h1 style={{ fontSize: '24px', margin: 0 }}>Allocation Manifest</h1>
-                <span>Total Locations: {allocatedLocations.length}</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                    <span>Total Locations: {allocatedLocations.length}</span>
+                    <button
+                        onClick={handleExportCSV}
+                        style={{
+                            padding: '8px 16px',
+                            backgroundColor: '#2563eb',
+                            color: 'white',
+                            border: 'none',
+                            borderRadius: '6px',
+                            cursor: 'pointer',
+                            fontSize: '0.85rem',
+                            fontWeight: '600',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '6px'
+                        }}
+                    >
+                        ⬇ Export CSV
+                    </button>
+                    <button
+                        onClick={() => window.print()}
+                        style={{
+                            padding: '8px 16px',
+                            backgroundColor: '#1e293b',
+                            color: 'white',
+                            border: 'none',
+                            borderRadius: '6px',
+                            cursor: 'pointer',
+                            fontSize: '0.85rem',
+                            fontWeight: '600',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '6px'
+                        }}
+                    >
+                        🖨️ Print
+                    </button>
+                </div>
             </header>
 
             <div className="location-list">
                 {allocatedLocations.map(loc => {
                     const currentTotal = loc.allocations.reduce((sum, a) => sum + a.amount, 0);
-                    // Sort allocations by Affiliate Name then Client Name
                     const sortedAllocations = [...loc.allocations].sort((a, b) => {
                         if (a.affiliate < b.affiliate) return -1;
                         if (a.affiliate > b.affiliate) return 1;

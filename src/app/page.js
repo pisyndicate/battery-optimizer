@@ -1,5 +1,5 @@
 'use client';
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { INITIAL_LOCATIONS, INITIAL_CLIENTS } from '@/lib/data';
 import { allocateBatteries, adjustClientCounts } from '@/lib/optimizer';
 import LocationCard from '@/components/LocationCard';
@@ -30,21 +30,40 @@ export default function Home() {
     const [targetUtilization, setTargetUtilization] = useState(100);
     const [isSidebarOpen, setIsSidebarOpen] = useState(true);
 
+    // Auto-restore last active project on mount
+    useEffect(() => {
+        try {
+            const { getActiveProject } = require('@/components/ProjectManager');
+            const active = getActiveProject();
+            if (active && active.state) {
+                const s = active.state;
+                if (s.customData) setCustomData(s.customData);
+                if (s.pinnedAllocations) setPinnedAllocations(s.pinnedAllocations);
+                if (s.exclusiveAffiliates) setExclusiveAffiliates(s.exclusiveAffiliates);
+                if (s.targetUtilization != null) setTargetUtilization(s.targetUtilization);
+                if (s.useAdjustedCounts != null) setUseAdjustedCounts(s.useAdjustedCounts);
+                showToast(`Restored: ${active.name}`, 'info');
+            }
+        } catch (e) {
+            console.warn('Failed to restore project:', e);
+        }
+    }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
     const toggleExclusive = (name) => {
         setExclusiveAffiliates(prev =>
             prev.includes(name) ? prev.filter(n => n !== name) : [...prev, name]
         );
     };
 
-    const locations = useMemo(() => customData?.locations || INITIAL_LOCATIONS, [customData]);
+    const locations = useMemo(() => customData?.locations || [], [customData]);
 
     const totalCapacity = useMemo(() => {
-        const locs = customData?.locations || INITIAL_LOCATIONS;
+        const locs = customData?.locations || [];
         return locs.reduce((sum, l) => sum + l.capacity, 0);
     }, [customData]);
 
     const clients = useMemo(() => {
-        let baseClients = customData?.clients || INITIAL_CLIENTS;
+        let baseClients = customData?.clients || [];
         if (useAdjustedCounts) {
             const targetTotalAttributes = totalCapacity * (targetUtilization / 100);
             return adjustClientCounts(baseClients, Math.floor(targetTotalAttributes));
@@ -124,7 +143,7 @@ export default function Home() {
     };
 
     const handleMasterReset = () => {
-        if (confirm("⚠️ RESET ALL WARNING ⚠️\n\nThis will clear:\n- All pinned clients\n- Exclusive affiliate filters\n- Custom data imports\n- Target utilization (reset to 100%)\n\nAre you sure?")) {
+        if (confirm("⚠️ RESET WARNING ⚠️\n\nThis will clear the current session:\n- All pinned clients\n- Exclusive affiliate filters\n- Custom data imports\n- Target utilization (reset to 100%)\n\nSaved projects will NOT be deleted.\n\nAre you sure?")) {
             setPinnedAllocations([]);
             setExclusiveAffiliates([]);
             setTargetUtilization(100);
@@ -132,61 +151,14 @@ export default function Home() {
             setUseAdjustedCounts(false);
             setGlobalSearch("");
             setRunId(prev => prev + 1);
-            showToast("Application has been fully reset.", "warning");
+            try {
+                const { setActiveProject } = require('@/components/ProjectManager');
+                if (typeof window !== 'undefined') localStorage.removeItem('battery-optimizer-active-project');
+            } catch (e) { /* ignore */ }
+            showToast("Session cleared. Saved projects preserved.", "info");
         }
     };
 
-    const handleSaveProject = () => {
-        const projectState = {
-            timestamp: new Date().toISOString(),
-            customData,
-            pinnedAllocations,
-            exclusiveAffiliates,
-            targetUtilization,
-            useAdjustedCounts,
-            globalSearch
-        };
-
-        const jsonContent = JSON.stringify(projectState, null, 2);
-        const blob = new Blob([jsonContent], { type: 'application/json' });
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.setAttribute('href', url);
-        link.setAttribute('download', `battery_project_${new Date().toISOString().slice(0, 10)}.json`);
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        showToast("Project saved successfully!", "success");
-    };
-
-    const handleLoadProject = (event) => {
-        const file = event.target.files[0];
-        if (!file) return;
-
-        const reader = new FileReader();
-        reader.onload = (e) => {
-            try {
-                const state = JSON.parse(e.target.result);
-
-                // Validate/Restore state
-                if (state.customData) setCustomData(state.customData);
-                if (state.pinnedAllocations) setPinnedAllocations(state.pinnedAllocations);
-                if (state.exclusiveAffiliates) setExclusiveAffiliates(state.exclusiveAffiliates);
-                if (state.targetUtilization) setTargetUtilization(state.targetUtilization);
-                if (state.useAdjustedCounts !== undefined) setUseAdjustedCounts(state.useAdjustedCounts);
-                if (state.globalSearch) setGlobalSearch(state.globalSearch);
-
-                setRunId(prev => prev + 1); // Trigger re-render
-                showToast("Project loaded successfully!", "success");
-            } catch (err) {
-                console.error("Failed to load project:", err);
-                showToast("Invalid project file", "error");
-            }
-        };
-        reader.readAsText(file);
-        // Reset input value to allow same file selection again
-        event.target.value = '';
-    };
 
     const { locations: allocatedLocations, clients: processedClients } = useMemo(() => {
         const effectiveTolerance = Math.max(0, 100 - targetUtilization);
@@ -251,124 +223,29 @@ export default function Home() {
 
     // --- Header Content ---
     const headerContent = (
-        <div style={{ display: 'flex', alignItems: 'center', width: '100%', justifyContent: 'space-between' }}>
-            <div style={{ display: 'flex', gap: '24px', alignItems: 'center', flex: 1 }}>
+        <div style={{ display: 'flex', alignItems: 'center', width: '100%', gap: '24px' }}>
 
-                {/* Search Bar */}
-                <div style={{ position: 'relative', width: '300px' }}>
-                    <span style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: '#64748b' }}>🔍</span>
-                    <input
-                        type="text"
-                        placeholder="Search Client or Location..."
-                        value={globalSearch}
-                        onChange={(e) => setGlobalSearch(e.target.value)}
-                        style={{
-                            width: '100%',
-                            padding: '8px 10px 8px 36px',
-                            borderRadius: '6px',
-                            border: '1px solid #e2e8f0',
-                            backgroundColor: '#f8fafc',
-                            fontSize: '0.9rem',
-                            outline: 'none'
-                        }}
-                    />
+            {/* Metrics */}
+            <div style={{ display: 'flex', gap: '32px', alignItems: 'center', flexShrink: 0 }}>
+                <div title="Total Capacity">
+                    <span style={{ fontSize: '0.75rem', display: 'block', color: 'var(--color-text-secondary)', fontWeight: '600', letterSpacing: '0.5px' }}>CAPACITY</span>
+                    <span style={{ fontWeight: '700', fontSize: '1.25rem', color: 'var(--color-text-primary)' }}>{totalCapacity.toLocaleString()}</span>
                 </div>
-
-                {/* Metrics */}
-                <div style={{ display: 'flex', gap: '24px', alignItems: 'center' }}>
-                    <div title="Total Capacity">
-                        <span style={{ fontSize: '0.75rem', display: 'block', color: 'var(--color-text-secondary)', fontWeight: '600', letterSpacing: '0.5px' }}>CAPACITY</span>
-                        <span style={{ fontWeight: '700', fontSize: '1.25rem', color: 'var(--color-text-primary)' }}>{totalCapacity.toLocaleString()}</span>
-                    </div>
-                    <div title="Total Demand">
-                        <span style={{ fontSize: '0.75rem', display: 'block', color: 'var(--color-text-secondary)', fontWeight: '600', letterSpacing: '0.5px' }}>DEMAND</span>
-                        <span style={{ fontWeight: '700', fontSize: '1.25rem', color: totalDemand > totalCapacity ? 'var(--color-danger)' : 'var(--color-text-primary)' }}>
-                            {totalDemand.toLocaleString()}
-                        </span>
-                    </div>
-                    {/* Utilization Bar */}
-                    <div style={{ width: '100px', height: '8px', backgroundColor: '#e2e8f0', borderRadius: '4px', overflow: 'hidden' }}>
-                        <div style={{
-                            width: `${Math.min((totalDemand / totalCapacity) * 100, 100)}%`,
-                            height: '100%',
-                            backgroundColor: totalDemand > totalCapacity ? 'var(--color-danger)' : 'var(--color-primary)',
-                            transition: 'width 0.5s ease-out'
-                        }}></div>
-                    </div>
+                <div title="Total Demand">
+                    <span style={{ fontSize: '0.75rem', display: 'block', color: 'var(--color-text-secondary)', fontWeight: '600', letterSpacing: '0.5px' }}>DEMAND</span>
+                    <span style={{ fontWeight: '700', fontSize: '1.25rem', color: totalDemand > totalCapacity ? 'var(--color-danger)' : 'var(--color-text-primary)' }}>
+                        {totalDemand.toLocaleString()}
+                    </span>
                 </div>
-            </div>
-
-            <div style={{ display: 'flex', gap: '12px' }}>
-                <input
-                    type="file"
-                    id="project-upload"
-                    accept=".json"
-                    style={{ display: 'none' }}
-                    onChange={handleLoadProject}
-                />
-                <button
-                    onClick={() => document.getElementById('project-upload').click()}
-                    className="btn"
-                    style={{
-                        display: 'flex',
-                        gap: '8px',
-                        backgroundColor: 'var(--color-surface)',
-                        color: 'var(--color-text-primary)',
-                        border: '1px solid var(--color-border)',
-                        fontWeight: '600'
-                    }}
-                    title="Load Project File"
-                >
-                    <span>📂</span> Load
-                </button>
-                <button
-                    onClick={handleSaveProject}
-                    className="btn"
-                    style={{
-                        display: 'flex',
-                        gap: '8px',
-                        backgroundColor: 'var(--color-surface)',
-                        color: 'var(--color-text-primary)',
-                        border: '1px solid var(--color-border)',
-                        fontWeight: '600'
-                    }}
-                    title="Save Project File"
-                >
-                    <span>💾</span> Save
-                </button>
-
-                <div style={{ width: '1px', backgroundColor: '#cbd5e1', margin: '0 4px' }}></div>
-
-                <button
-                    onClick={handleMasterReset}
-                    className="btn"
-                    style={{
-                        display: 'flex',
-                        gap: '8px',
-                        backgroundColor: '#fee2e2',
-                        color: '#ef4444',
-                        border: '1px solid #fecaca',
-                        fontWeight: '600'
-                    }}
-                    title="Reset Everything (Pins, Data, Settings)"
-                >
-                    <span>🔄</span> Reset App
-                </button>
-                <a
-                    href="/print"
-                    target="_blank"
-                    className="btn btn-secondary"
-                    style={{ textDecoration: 'none', display: 'flex', gap: '8px' }}
-                >
-                    <span>🖨️</span> Print
-                </a>
-                <button
-                    onClick={handleExportCSV}
-                    className="btn btn-primary"
-                    style={{ display: 'flex', gap: '8px' }}
-                >
-                    <span>⬇</span> Export
-                </button>
+                {/* Utilization Bar */}
+                <div style={{ width: '150px', height: '8px', backgroundColor: '#e2e8f0', borderRadius: '4px', overflow: 'hidden' }}>
+                    <div style={{
+                        width: `${Math.min((totalDemand / totalCapacity) * 100, 100)}%`,
+                        height: '100%',
+                        backgroundColor: totalDemand > totalCapacity ? 'var(--color-danger)' : 'var(--color-primary)',
+                        transition: 'width 0.5s ease-out'
+                    }}></div>
+                </div>
             </div>
         </div>
     );
@@ -399,6 +276,33 @@ export default function Home() {
                         }
                     }}
                     onPinClients={handlePinClients}
+                    onLoadState={(state) => {
+                        setCustomData(state.customData || null);
+                        setPinnedAllocations(state.pinnedAllocations || []);
+                        setExclusiveAffiliates(state.exclusiveAffiliates || []);
+                        setTargetUtilization(state.targetUtilization ?? 100);
+                        setUseAdjustedCounts(state.useAdjustedCounts ?? false);
+                        setRunId(prev => prev + 1);
+                        showToast('Project loaded', 'success');
+                    }}
+                    onNewProject={() => {
+                        setPinnedAllocations([]);
+                        setExclusiveAffiliates([]);
+                        setTargetUtilization(100);
+                        setCustomData(null);
+                        setUseAdjustedCounts(false);
+                        setGlobalSearch('');
+                        setRunId(prev => prev + 1);
+                        showToast('Started new project', 'info');
+                    }}
+                    currentStateFn={() => ({
+                        customData: customData || { locations, clients },
+                        pinnedAllocations,
+                        exclusiveAffiliates,
+                        targetUtilization,
+                        useAdjustedCounts
+                    })}
+                    onMasterReset={handleMasterReset}
                 />
             }
             headerContent={headerContent}
@@ -450,39 +354,84 @@ export default function Home() {
                 </div>
             </div>
 
-            {/* Main Grid */}
-            {viewMode === 'locations' ? (
+            {/* Blank state when no data is loaded */}
+            {locations.length === 0 && clients.length === 0 ? (
                 <div style={{
-                    display: 'grid',
-                    gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))',
-                    gap: '20px',
-                    paddingBottom: '40px'
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    padding: '80px 40px',
+                    textAlign: 'center'
                 }}>
-                    {filteredLocations.length === 0 && (
-                        <div style={{ gridColumn: '1/-1', textAlign: 'center', padding: '40px', color: '#64748b' }}>
-                            No locations found matching "{globalSearch}"
+                    <div style={{ fontSize: '3rem', marginBottom: '16px' }}>📦</div>
+                    <h2 style={{ margin: '0 0 8px 0', fontSize: '1.5rem', color: 'var(--color-text-primary)' }}>
+                        No Project Loaded
+                    </h2>
+                    <p style={{ margin: '0 0 24px 0', color: 'var(--color-text-secondary)', maxWidth: '400px', lineHeight: '1.6' }}>
+                        Open a saved project from the sidebar, or upload location and client CSV files to get started.
+                    </p>
+                    <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', justifyContent: 'center' }}>
+                        <div style={{
+                            padding: '12px 20px',
+                            backgroundColor: 'var(--color-surface)',
+                            border: '1px solid var(--color-border)',
+                            borderRadius: '8px',
+                            fontSize: '0.85rem',
+                            color: 'var(--color-text-secondary)'
+                        }}>
+                            💾 <strong>Open a project</strong> from the sidebar
                         </div>
-                    )}
-                    {filteredLocations.map(loc => (
-                        <LocationCard
-                            key={loc.id}
-                            location={loc}
-                            onDropClients={(locId, clientNames) => {
-                                // Reusing handlePinClients logic but wrapped for drop interface
-                                handlePinClients(clientNames, locId);
-                            }}
-                            onCardClick={() => setSelectedLocation(loc)}
-                        />
-                    ))}
+                        <div style={{
+                            padding: '12px 20px',
+                            backgroundColor: 'var(--color-surface)',
+                            border: '1px solid var(--color-border)',
+                            borderRadius: '8px',
+                            fontSize: '0.85rem',
+                            color: 'var(--color-text-secondary)'
+                        }}>
+                            📁 <strong>Upload CSVs</strong> via Data Management
+                        </div>
+                    </div>
                 </div>
             ) : (
-                <div style={{ paddingBottom: '40px' }}>
-                    <AffiliateSummary locations={filteredLocations} />
-                    <AffiliateAllocations
-                        locations={filteredLocations}
-                        onAffiliateClick={setSelectedAffiliate}
-                    />
-                </div>
+                <>
+
+                    {/* Main Grid */}
+                    {viewMode === 'locations' ? (
+                        <div style={{
+                            display: 'grid',
+                            gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))',
+                            gap: '20px',
+                            paddingBottom: '40px'
+                        }}>
+                            {filteredLocations.length === 0 && (
+                                <div style={{ gridColumn: '1/-1', textAlign: 'center', padding: '40px', color: '#64748b' }}>
+                                    No locations found matching "{globalSearch}"
+                                </div>
+                            )}
+                            {filteredLocations.map(loc => (
+                                <LocationCard
+                                    key={loc.id}
+                                    location={loc}
+                                    onDropClients={(locId, clientNames) => {
+                                        // Reusing handlePinClients logic but wrapped for drop interface
+                                        handlePinClients(clientNames, locId);
+                                    }}
+                                    onCardClick={() => setSelectedLocation(loc)}
+                                />
+                            ))}
+                        </div>
+                    ) : (
+                        <div style={{ paddingBottom: '40px' }}>
+                            <AffiliateSummary locations={filteredLocations} />
+                            <AffiliateAllocations
+                                locations={filteredLocations}
+                                onAffiliateClick={setSelectedAffiliate}
+                            />
+                        </div>
+                    )}
+                </>
             )}
 
             {/* Overlays */}

@@ -1,6 +1,7 @@
 'use client';
 import React, { useState } from 'react';
 import DataManagement from '../DataManagement';
+import ProjectManager from '../ProjectManager';
 import { getAffiliateColor } from '@/lib/theme';
 import { useToast } from '@/contexts/ToastContext';
 
@@ -51,7 +52,11 @@ const SidebarControls = ({
     setPinnedAllocations,
     onDataUpload,
     onReset,
-    onPinClients
+    onPinClients,
+    onLoadState,
+    onNewProject,
+    currentStateFn,
+    onMasterReset
 }) => {
     const { showToast } = useToast();
     const [pinSearch, setPinSearch] = useState("");
@@ -115,6 +120,7 @@ const SidebarControls = ({
                             value={targetUtilization}
                             onChange={(e) => setTargetUtilization(Number(e.target.value))}
                             style={{ flex: 1 }}
+                            aria-label="Target Utilization Percentage"
                         />
                         <span style={{ color: 'white', fontSize: '0.875rem', width: '30px', textAlign: 'right' }}>
                             {targetUtilization}%
@@ -328,6 +334,73 @@ const SidebarControls = ({
                     }}
                 />
             </ControlSection>
+
+            {/* Projects */}
+            <div style={{
+                borderTop: '1px solid rgba(255,255,255,0.1)',
+                paddingTop: '16px',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '8px'
+            }}>
+                <span style={{ fontSize: '0.75rem', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.5px', fontWeight: '600', marginBottom: '4px' }}>Projects</span>
+
+                <ProjectManager
+                    onLoadState={onLoadState}
+                    onNewProject={onNewProject}
+                    currentStateFn={currentStateFn}
+                />
+
+                <div style={{ height: '1px', backgroundColor: 'rgba(255,255,255,0.06)', margin: '4px 0' }}></div>
+
+                <a
+                    href="/print"
+                    target="_blank"
+                    style={{
+                        padding: '10px 12px',
+                        backgroundColor: '#0f172a',
+                        color: '#e2e8f0',
+                        border: '1px solid #334155',
+                        borderRadius: '6px',
+                        cursor: 'pointer',
+                        fontSize: '0.8rem',
+                        fontWeight: '500',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '6px',
+                        textDecoration: 'none',
+                        transition: 'all 0.15s ease'
+                    }}
+                    onMouseEnter={e => { e.currentTarget.style.backgroundColor = '#1e293b'; e.currentTarget.style.borderColor = '#475569'; }}
+                    onMouseLeave={e => { e.currentTarget.style.backgroundColor = '#0f172a'; e.currentTarget.style.borderColor = '#334155'; }}
+                >
+                    🖨️ Print / Export Manifest
+                </a>
+
+                <button
+                    onClick={onMasterReset}
+                    style={{
+                        padding: '10px 12px',
+                        backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                        color: '#f87171',
+                        border: '1px solid rgba(239, 68, 68, 0.2)',
+                        borderRadius: '6px',
+                        cursor: 'pointer',
+                        fontSize: '0.8rem',
+                        fontWeight: '500',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '6px',
+                        transition: 'all 0.15s ease'
+                    }}
+                    onMouseEnter={e => { e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.2)'; }}
+                    onMouseLeave={e => { e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.1)'; }}
+                >
+                    🔄 Reset App
+                </button>
+            </div>
         </div>
     );
 };

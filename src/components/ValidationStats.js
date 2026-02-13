@@ -60,9 +60,9 @@ const ValidationStats = ({ locations, totalClients, unallocatedList = [] }) => {
             marginBottom: '24px',
             fontSize: '0.9em'
         }}>
-            <h3 style={{ margin: '0 0 8px 0', fontSize: '1em', fontWeight: 'bold' }}>
+            <h2 style={{ margin: '0 0 8px 0', fontSize: '1em', fontWeight: 'bold' }}>
                 System Validation: {isHealthy ? 'PASSED' : 'WARNING'}
-            </h3>
+            </h2>
             <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
                 <div>
                     <strong>Allocated Clients:</strong> {allocatedClientCount} / {totalClients}

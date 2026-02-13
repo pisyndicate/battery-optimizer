@@ -1,226 +1,287 @@
 import { INITIAL_CLIENTS, INITIAL_LOCATIONS } from './data';
 
 export const allocateBatteries = (inputClients, inputLocations, exclusiveAffiliateNames = [], pinnedAllocations = [], toleranceMin = 0, toleranceMax = 0) => {
-    // Deep copy
-    let clients = JSON.parse(JSON.stringify(inputClients));
-    // Calculate effective limit factor
-    const limitFactor = (100 - toleranceMin) / 100;
+    const MAX_RETRIES = 10;
+    let retryCount = 0;
+    let capacityBoost = 0; // Progressively relax target on retries
 
-    let locations = JSON.parse(JSON.stringify(inputLocations)).map(l => {
-        const effectiveCapacity = Math.floor(l.capacity * limitFactor);
-        return {
-            ...l,
-            allocations: [], // Will now store { clientName, amount, affiliate }
-            originalCapacity: l.capacity, // Keep track of real physical cap
-            effectiveCapacity: effectiveCapacity, // The cap we are targeting
-            remainingCapacity: effectiveCapacity, // Start with the reduced cap
-            affiliatesHosted: new Set(), // Track which affiliates are here
-            exclusiveOwner: null // Track if this location is locked by an exclusive affiliate
-        };
-    });
+    while (retryCount <= MAX_RETRIES) {
+        // Deep copy fresh state each attempt
+        let clients = JSON.parse(JSON.stringify(inputClients));
+        const limitFactor = Math.min(1, ((100 - toleranceMin) / 100) + capacityBoost);
 
-    // 0. Pre-process Pinned Clients
-    // Format of pinnedAllocations: [{ clientName: String, locationId: String }]
-    if (pinnedAllocations.length > 0) {
-        pinnedAllocations.forEach(pin => {
-            const client = clients.find(c => c.name === pin.clientName);
-            const location = locations.find(l => l.id === pin.locationId);
-
-            if (client && location) {
-                // If location is exclusive to someone else, we might have a conflict.
-                // But "Pinning" usually overrides logic.
-                // We will just allocate it.
-
-                // Add to location
-                location.allocations.push({
-                    clientId: client.id,
-                    clientName: client.name,
-                    amount: client.batteries,
-                    affiliate: client.affiliate
-                });
-                location.remainingCapacity -= client.batteries;
-                location.affiliatesHosted.add(client.affiliate);
-
-                // Mark client as allocated
-                client.allocated = true;
-                client.locationId = location.id;
-
-                // Handle Exclusive Logic Interaction??
-                // If this client belongs to an Exclusive Affiliate, should we mark the location?
-                // Probably yes, to prevent others from jumping in if the user intends this.
-                if (exclusiveAffiliateNames.includes(client.affiliate)) {
-                    location.exclusiveOwner = client.affiliate;
-                }
-            }
-        });
-    }
-
-    // 1. Group Clients by Affiliate
-    const affiliateGroups = {};
-    clients.forEach(c => {
-        // Skip already pinned/allocated clients from the group logic
-        // Wait, if we remove them from the group, the `totalDemand` of the group drops.
-        // This is correct because the "remaining" demand is what needs to be allocated.
-        if (c.allocated) return;
-
-        if (!affiliateGroups[c.affiliate]) affiliateGroups[c.affiliate] = [];
-        affiliateGroups[c.affiliate].push(c);
-    });
-
-    // 2. Sort Affiliate Groups by Total Size (Largest First) - "Large affiliates get large locations"
-    const sortedAffiliates = Object.entries(affiliateGroups)
-        .map(([name, group]) => ({
-            name,
-            clients: group,
-            totalDemand: group.reduce((sum, c) => sum + c.batteries, 0)
-        }))
-
-        .sort((a, b) => {
-            // Priority 1: Exclusive Affiliates First
-            const aEx = exclusiveAffiliateNames.includes(a.name);
-            const bEx = exclusiveAffiliateNames.includes(b.name);
-
-            if (aEx && !bEx) return -1;
-            if (!aEx && bEx) return 1;
-
-            // Priority 2: Within Exclusive, Sort Smallest -> Largest (Better packing for rigid exclusive blocks)
-            if (aEx && bEx) {
-                return a.totalDemand - b.totalDemand;
-            }
-
-            // Priority 3: Non-Exclusive, Sort Largest -> Smallest (Fill big rocks first)
-            return b.totalDemand - a.totalDemand;
+        let locations = JSON.parse(JSON.stringify(inputLocations)).map(l => {
+            const effectiveCapacity = Math.floor(l.capacity * limitFactor);
+            return {
+                ...l,
+                allocations: [],
+                originalCapacity: l.capacity,
+                effectiveCapacity: effectiveCapacity,
+                remainingCapacity: effectiveCapacity,
+                affiliatesHosted: new Set(),
+                exclusiveOwner: null
+            };
         });
 
-    // 3. Sort Locations by Capacity (Largest First)
-    locations.sort((a, b) => b.capacity - a.capacity);
+        // ============================================================
+        // PASS 1: Pinned Clients & Exclusive Affiliates
+        // ============================================================
 
-    // 4. Allocation Logic
-    for (let group of sortedAffiliates) {
-        const isExclusive = exclusiveAffiliateNames.includes(group.name);
-
-        // Filter valid locations for this group
-        // If Exclusive: Must be empty OR already owned by this group
-        // If Non-Exclusive: Must NOT be owned by any exclusive group (and preferably not be target for exclusive, but we prioritize exclusive so valid locs are just non-exclusive ones)
-
-        let possibleLocations = locations.filter(loc => {
-            if (loc.exclusiveOwner && loc.exclusiveOwner !== group.name) return false; // Locked by someone else
-
-            if (isExclusive) {
-                // Must be Empty OR Owned by Self
-                return loc.allocations.length === 0 || loc.exclusiveOwner === group.name;
-            } else {
-                // Non-Exclusive: Can go anywhere that is NOT locked
-                return !loc.exclusiveOwner;
-            }
-        });
-
-        // Identify Affinity Locations (where this affiliate already has pinned/allocated clients)
-        const affinityLocIds = new Set();
-        clients.forEach(c => {
-            if (c.affiliate === group.name && c.allocated && c.locationId) {
-                affinityLocIds.add(c.locationId);
-            }
-        });
-
-        // Strategy A: Try to fit WHOLE group into ONE location
-        // OPTIMIZATION: Use "Best Fit" (Smallest Sufficient Location), BUT prioritize Affinity Locations
-
-        // Sort: Affinity First, then Best Fit (Smallest Sufficient -> Largest)
-        possibleLocations.sort((a, b) => {
-            const aAffinity = affinityLocIds.has(a.id);
-            const bAffinity = affinityLocIds.has(b.id);
-
-            if (aAffinity && !bAffinity) return -1; // Prioritize Affinity
-            if (!aAffinity && bAffinity) return 1;
-
-            // Standard Best Fit
-            return a.remainingCapacity - b.remainingCapacity;
-        });
-
-        let allocated = false;
-
-        for (let loc of possibleLocations) {
-            if (loc.remainingCapacity >= group.totalDemand) {
-                // Fits!
-                group.clients.forEach(client => {
-                    loc.allocations.push({
+        // 1a. Place pinned clients first (they override everything)
+        if (pinnedAllocations.length > 0) {
+            pinnedAllocations.forEach(pin => {
+                const client = clients.find(c => c.name === pin.clientName);
+                const location = locations.find(l => l.id === pin.locationId);
+                if (client && location) {
+                    location.allocations.push({
                         clientId: client.id,
                         clientName: client.name,
                         amount: client.batteries,
                         affiliate: client.affiliate
                     });
-                    loc.remainingCapacity -= client.batteries;
-                    loc.affiliatesHosted.add(client.affiliate);
-                    client.locationId = loc.id;
+                    location.remainingCapacity -= client.batteries;
+                    location.affiliatesHosted.add(client.affiliate);
                     client.allocated = true;
-                });
-
-                if (isExclusive) {
-                    loc.exclusiveOwner = group.name;
+                    client.locationId = location.id;
+                    if (exclusiveAffiliateNames.includes(client.affiliate)) {
+                        location.exclusiveOwner = client.affiliate;
+                    }
                 }
-
-                allocated = true;
-                break;
-            }
+            });
         }
 
-        // Strategy B: If it doesn't fit in one, we MUST split.
-        // Fill the largest available locations first until done (Worst Fit / Greedy).
-        if (!allocated) {
-            // Re-sort Descending (Largest -> Smallest) for Chunking
-            possibleLocations.sort((a, b) => b.remainingCapacity - a.remainingCapacity);
+        // 1b. Place exclusive affiliate groups
+        const affiliateGroups = {};
+        clients.forEach(c => {
+            if (c.allocated) return;
+            if (!affiliateGroups[c.affiliate]) affiliateGroups[c.affiliate] = [];
+            affiliateGroups[c.affiliate].push(c);
+        });
 
-            let clientsToAlloc = [...group.clients];
-            // Sort clients large to small? Or doesn't matter much.
+        const exclusiveGroups = Object.entries(affiliateGroups)
+            .filter(([name]) => exclusiveAffiliateNames.includes(name))
+            .map(([name, group]) => ({
+                name,
+                clients: group,
+                totalDemand: group.reduce((sum, c) => sum + c.batteries, 0)
+            }))
+            .sort((a, b) => a.totalDemand - b.totalDemand); // Smallest first for better packing
 
-            for (let loc of possibleLocations) {
-                if (clientsToAlloc.length === 0) break;
-                if (loc.remainingCapacity <= 0) continue;
+        for (let group of exclusiveGroups) {
+            let possibleLocs = locations.filter(loc => {
+                if (loc.exclusiveOwner && loc.exclusiveOwner !== group.name) return false;
+                return loc.allocations.length === 0 || loc.exclusiveOwner === group.name;
+            });
 
-                // Pack as many clients as possible into this location
-                // Greedy packing: take clients that fit.
-                // Or just fill sequentially?
-                // Let's just fill sequentially.
-                // Note: We are allocating CLIENTS, not dividing batteries.
-                // So if a client has size 100 and loc has 50 space, we SKIP this client for this loc?
-                // Or do we split the client? Requirement: "Don't split clients across multiple locations"
-                // So we MUST find a location for the whole client.
+            // Try to fit whole group in one location (best fit)
+            const affinityLocIds = new Set();
+            clients.forEach(c => {
+                if (c.affiliate === group.name && c.allocated && c.locationId) affinityLocIds.add(c.locationId);
+            });
 
-                const clientsForThisLoc = [];
-                const clientsForLater = [];
+            possibleLocs.sort((a, b) => {
+                const aAff = affinityLocIds.has(a.id) ? 1 : 0;
+                const bAff = affinityLocIds.has(b.id) ? 1 : 0;
+                if (aAff !== bAff) return bAff - aAff;
+                return a.remainingCapacity - b.remainingCapacity;
+            });
 
-                for (let client of clientsToAlloc) {
-                    if (loc.remainingCapacity >= client.batteries) {
-                        // Add client
-                        loc.allocations.push({
-                            clientId: client.id,
-                            clientName: client.name,
-                            amount: client.batteries,
-                            affiliate: client.affiliate
-                        });
+            let placed = false;
+            for (let loc of possibleLocs) {
+                if (loc.remainingCapacity >= group.totalDemand) {
+                    group.clients.forEach(client => {
+                        loc.allocations.push({ clientId: client.id, clientName: client.name, amount: client.batteries, affiliate: client.affiliate });
                         loc.remainingCapacity -= client.batteries;
                         loc.affiliatesHosted.add(client.affiliate);
                         client.allocated = true;
                         client.locationId = loc.id;
-                    } else {
-                        clientsForLater.push(client);
-                    }
-                }
-
-                if (loc.allocations.length > 0 && isExclusive) {
+                    });
                     loc.exclusiveOwner = group.name;
+                    placed = true;
+                    break;
                 }
-
-                clientsToAlloc = clientsForLater;
             }
 
-            if (clientsToAlloc.length > 0) {
-                console.warn("Could not allocate some clients for", group.name, clientsToAlloc);
+            // Split across multiple exclusive locations if needed
+            if (!placed) {
+                possibleLocs.sort((a, b) => b.remainingCapacity - a.remainingCapacity);
+                let remaining = [...group.clients];
+                for (let loc of possibleLocs) {
+                    if (remaining.length === 0) break;
+                    if (loc.remainingCapacity <= 0) continue;
+                    const forLater = [];
+                    for (let client of remaining) {
+                        if (loc.remainingCapacity >= client.batteries) {
+                            loc.allocations.push({ clientId: client.id, clientName: client.name, amount: client.batteries, affiliate: client.affiliate });
+                            loc.remainingCapacity -= client.batteries;
+                            loc.affiliatesHosted.add(client.affiliate);
+                            client.allocated = true;
+                            client.locationId = loc.id;
+                        } else {
+                            forLater.push(client);
+                        }
+                    }
+                    if (loc.allocations.length > 0) loc.exclusiveOwner = group.name;
+                    remaining = forLater;
+                }
             }
         }
+
+        // ============================================================
+        // PASS 2: Place remaining clients, minimize affiliate spread
+        // ============================================================
+
+        const nonExclusiveGroups = Object.entries(affiliateGroups)
+            .filter(([name]) => !exclusiveAffiliateNames.includes(name))
+            .map(([name, group]) => ({
+                name,
+                clients: group.filter(c => !c.allocated),
+                totalDemand: group.filter(c => !c.allocated).reduce((sum, c) => sum + c.batteries, 0)
+            }))
+            .filter(g => g.clients.length > 0)
+            .sort((a, b) => b.totalDemand - a.totalDemand); // Largest first
+
+        for (let group of nonExclusiveGroups) {
+            let possibleLocs = locations.filter(loc => !loc.exclusiveOwner);
+
+            // Find affinity locations (where this affiliate already has pinned clients)
+            const affinityLocIds = new Set();
+            clients.forEach(c => {
+                if (c.affiliate === group.name && c.allocated && c.locationId) affinityLocIds.add(c.locationId);
+            });
+
+            // Sort: affinity first, then best fit (smallest sufficient)
+            possibleLocs.sort((a, b) => {
+                const aAff = affinityLocIds.has(a.id) ? 1 : 0;
+                const bAff = affinityLocIds.has(b.id) ? 1 : 0;
+                if (aAff !== bAff) return bAff - aAff;
+                return a.remainingCapacity - b.remainingCapacity;
+            });
+
+            // Try to fit whole group in one location
+            let placed = false;
+            for (let loc of possibleLocs) {
+                if (loc.remainingCapacity >= group.totalDemand) {
+                    group.clients.forEach(client => {
+                        loc.allocations.push({ clientId: client.id, clientName: client.name, amount: client.batteries, affiliate: client.affiliate });
+                        loc.remainingCapacity -= client.batteries;
+                        loc.affiliatesHosted.add(client.affiliate);
+                        client.allocated = true;
+                        client.locationId = loc.id;
+                    });
+                    placed = true;
+                    break;
+                }
+            }
+
+            // Must split across locations — fewest possible
+            if (!placed) {
+                possibleLocs.sort((a, b) => {
+                    const aAff = affinityLocIds.has(a.id) ? 1 : 0;
+                    const bAff = affinityLocIds.has(b.id) ? 1 : 0;
+                    if (aAff !== bAff) return bAff - aAff;
+                    return b.remainingCapacity - a.remainingCapacity; // Largest first for fewer splits
+                });
+
+                let remaining = [...group.clients].sort((a, b) => b.batteries - a.batteries);
+                for (let loc of possibleLocs) {
+                    if (remaining.length === 0) break;
+                    if (loc.remainingCapacity <= 0) continue;
+                    const forLater = [];
+                    for (let client of remaining) {
+                        if (loc.remainingCapacity >= client.batteries) {
+                            loc.allocations.push({ clientId: client.id, clientName: client.name, amount: client.batteries, affiliate: client.affiliate });
+                            loc.remainingCapacity -= client.batteries;
+                            loc.affiliatesHosted.add(client.affiliate);
+                            client.allocated = true;
+                            client.locationId = loc.id;
+                        } else {
+                            forLater.push(client);
+                        }
+                    }
+                    remaining = forLater;
+                }
+            }
+        }
+
+        // ============================================================
+        // PASS 3: Overflow — use FULL capacity, prefer affinity locations
+        // ============================================================
+
+        const stillUnallocated = clients.filter(c => !c.allocated);
+        if (stillUnallocated.length === 0) {
+            // All placed! Return results.
+            return { locations, clients };
+        }
+
+        // Reopen to full capacity
+        locations.forEach(loc => {
+            const used = loc.allocations.reduce((sum, a) => sum + a.amount, 0);
+            loc.remainingCapacity = loc.originalCapacity - used;
+        });
+
+        stillUnallocated.sort((a, b) => b.batteries - a.batteries);
+
+        for (let client of stillUnallocated) {
+            const isExclusive = exclusiveAffiliateNames.includes(client.affiliate);
+            let possibleLocs = locations.filter(loc => {
+                if (loc.remainingCapacity < client.batteries) return false;
+                if (loc.exclusiveOwner && loc.exclusiveOwner !== client.affiliate) return false;
+                if (isExclusive && loc.allocations.length > 0 && loc.exclusiveOwner !== client.affiliate) return false;
+                if (!isExclusive && loc.exclusiveOwner) return false;
+                return true;
+            });
+
+            // Prefer affinity (where affiliate already is), then best fit
+            possibleLocs.sort((a, b) => {
+                const aHas = a.affiliatesHosted.has(client.affiliate) ? 1 : 0;
+                const bHas = b.affiliatesHosted.has(client.affiliate) ? 1 : 0;
+                if (aHas !== bHas) return bHas - aHas;
+                return a.remainingCapacity - b.remainingCapacity;
+            });
+
+            if (possibleLocs.length > 0) {
+                const loc = possibleLocs[0];
+                loc.allocations.push({ clientId: client.id, clientName: client.name, amount: client.batteries, affiliate: client.affiliate });
+                loc.remainingCapacity -= client.batteries;
+                loc.affiliatesHosted.add(client.affiliate);
+                client.allocated = true;
+                client.locationId = loc.id;
+                if (isExclusive) loc.exclusiveOwner = client.affiliate;
+            }
+        }
+
+        // Check if everyone is placed
+        const finalUnallocated = clients.filter(c => !c.allocated);
+        if (finalUnallocated.length === 0) {
+            return { locations, clients };
+        }
+
+        // Still have unplaced clients — retry with relaxed capacity
+        retryCount++;
+        capacityBoost += 0.05; // Bump target up 5% each retry
+        console.warn(`Retry ${retryCount}: ${finalUnallocated.length} clients unplaced. Relaxing target by +${(capacityBoost * 100).toFixed(0)}%`);
     }
 
+    // If we exhausted retries, return best effort
+    console.warn("Max retries reached. Returning best effort allocation.");
+    let clients = JSON.parse(JSON.stringify(inputClients));
+    let locations = JSON.parse(JSON.stringify(inputLocations)).map(l => ({
+        ...l, allocations: [], originalCapacity: l.capacity, effectiveCapacity: l.capacity,
+        remainingCapacity: l.capacity, affiliatesHosted: new Set(), exclusiveOwner: null
+    }));
+    // One final full-capacity greedy pass
+    clients.sort((a, b) => b.batteries - a.batteries);
+    for (let client of clients) {
+        const loc = locations.filter(l => l.remainingCapacity >= client.batteries).sort((a, b) => a.remainingCapacity - b.remainingCapacity)[0];
+        if (loc) {
+            loc.allocations.push({ clientId: client.id, clientName: client.name, amount: client.batteries, affiliate: client.affiliate });
+            loc.remainingCapacity -= client.batteries;
+            loc.affiliatesHosted.add(client.affiliate);
+            client.allocated = true;
+            client.locationId = loc.id;
+        }
+    }
     return { locations, clients };
 };
 
