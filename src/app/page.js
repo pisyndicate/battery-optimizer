@@ -25,8 +25,7 @@ export default function Home() {
     const [overflowLocId, setOverflowLocId] = useState("");
     const [customData, setCustomData] = useState(null);
     const [runId, setRunId] = useState(0);
-    const [toleranceMin, setToleranceMin] = useState(0); // "Start" Tolerance (e.g. 2%) -> Max Fill 98%
-    const [toleranceMax, setToleranceMax] = useState(0); // "End" Tolerance (e.g. 12%) -> Min Fill 88%
+    const [targetUtilization, setTargetUtilization] = useState(100); // Target % of Total Capacity (e.g. 90% -> Leave 10% free)
 
     const toggleExclusive = (name) => {
         setExclusiveAffiliates(prev =>
@@ -48,29 +47,38 @@ export default function Home() {
 
     const locations = useMemo(() => customData?.locations || INITIAL_LOCATIONS, [customData]);
 
+    const totalCapacity = useMemo(() => {
+        const locs = customData?.locations || INITIAL_LOCATIONS;
+        return locs.reduce((sum, l) => sum + l.capacity, 0);
+    }, [customData]);
+
     const clients = useMemo(() => {
         let baseClients = customData?.clients || INITIAL_CLIENTS;
         if (useAdjustedCounts) {
-            return adjustClientCounts(baseClients, 18681);
+            const targetTotalAttributes = totalCapacity * (targetUtilization / 100);
+            return adjustClientCounts(baseClients, Math.floor(targetTotalAttributes));
         }
         return baseClients;
-    }, [useAdjustedCounts, customData]);
+    }, [useAdjustedCounts, customData, totalCapacity, targetUtilization]);
 
     // Run Allocation
     const { locations: allocatedLocations, clients: processedClients } = useMemo(() => {
+        // Tolerance Min = (100 - targetUtilization)
+        // If Target is 90%, we want to cap effectively at 90% (Tolerance 10%)
+        const effectiveTolerance = Math.max(0, 100 - targetUtilization);
+
         return allocateBatteries(
             clients,
             locations,
             exclusiveAffiliates,
             pinnedAllocations,
-            toleranceMin,
-            toleranceMax
+            effectiveTolerance,
+            0
         );
-    }, [clients, locations, exclusiveAffiliates, pinnedAllocations, runId, toleranceMin, toleranceMax]);
+    }, [clients, locations, exclusiveAffiliates, pinnedAllocations, runId, targetUtilization]);
 
     const unallocatedClients = processedClients ? processedClients.filter(c => !c.allocated) : [];
-
-    const totalCapacity = locations.reduce((sum, l) => sum + l.capacity, 0);
+    // remove redundant totalCapacity calc
     const totalDemand = clients.reduce((sum, c) => sum + c.batteries, 0);
 
     const handleExportCSV = () => {
@@ -154,36 +162,22 @@ export default function Home() {
                             checked={useAdjustedCounts}
                             onChange={(e) => setUseAdjustedCounts(e.target.checked)}
                         />
-                        Scale Client Counts to Fill Capacity (Target: 18,681)
+                        Scale Client Counts to Fill Capacity (Target: {totalCapacity ? Math.floor(totalCapacity * (targetUtilization / 100)).toLocaleString() : 'Loading...'})
                     </label>
 
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px', backgroundColor: '#fff', borderRadius: '4px', border: '1px solid #ced4da' }}>
-                        <span style={{ fontWeight: 'bold', fontSize: '0.9em' }}>Capacity Tolerance (%):</span>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                            <label style={{ display: 'flex', flexDirection: 'column', fontSize: '0.8em' }}>
-                                Start (Max Fill)
-                                <input
-                                    type="number"
-                                    min="0"
-                                    max="100"
-                                    value={toleranceMin}
-                                    onChange={(e) => setToleranceMin(Number(e.target.value))}
-                                    style={{ width: '60px', padding: '4px', border: '1px solid #ccc', borderRadius: '4px' }}
-                                />
-                            </label>
-                            <span style={{ alignSelf: 'flex-end', paddingBottom: '8px' }}>-</span>
-                            <label style={{ display: 'flex', flexDirection: 'column', fontSize: '0.8em' }}>
-                                End (Target Min)
-                                <input
-                                    type="number"
-                                    min="0"
-                                    max="100"
-                                    value={toleranceMax}
-                                    onChange={(e) => setToleranceMax(Number(e.target.value))}
-                                    style={{ width: '60px', padding: '4px', border: '1px solid #ccc', borderRadius: '4px' }}
-                                />
-                            </label>
-                        </div>
+                        <span style={{ fontWeight: 'bold', fontSize: '0.9em' }}>Target System Utilization (%):</span>
+                        <input
+                            type="number"
+                            min="1"
+                            max="100"
+                            value={targetUtilization}
+                            onChange={(e) => setTargetUtilization(Number(e.target.value))}
+                            style={{ width: '60px', padding: '4px', border: '1px solid #ccc', borderRadius: '4px' }}
+                        />
+                        <span style={{ fontSize: '0.8em', color: '#666' }}>
+                            (Effective Cap: {targetUtilization}%)
+                        </span>
                     </div>
 
                     <button
