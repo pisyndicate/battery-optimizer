@@ -260,18 +260,57 @@ const optimizeAffiliateSpread = (locations, clients, exclusiveAffiliateNames, pi
     return { locations, clients };
 };
 
-export const allocateBatteries = (inputClients, inputLocations, exclusiveAffiliateNames = [], pinnedAllocations = [], toleranceMin = 0, toleranceMax = 0) => {
+// Helper: Sort clients based on strategy
+const sortClients = (clients, strategy) => {
+    const sorted = [...clients];
+    switch (strategy) {
+        case 'smallest':
+            return sorted.sort((a, b) => a.batteries - b.batteries);
+        case 'alpha':
+            return sorted.sort((a, b) => a.name.localeCompare(b.name));
+        case 'round-robin':
+            // Group by affiliate, then interleave
+            const groups = {};
+            sorted.forEach(c => {
+                if (!groups[c.affiliate]) groups[c.affiliate] = [];
+                groups[c.affiliate].push(c);
+            });
+            const interleaved = [];
+            const affiliateNames = Object.keys(groups);
+            let more = true;
+            let i = 0;
+            while (more) {
+                more = false;
+                for (const aff of affiliateNames) {
+                    if (groups[aff][i]) {
+                        interleaved.push(groups[aff][i]);
+                        more = true;
+                    }
+                }
+                i++;
+            }
+            return interleaved;
+        case 'affiliate-grouping':
+            // Sort by Affiliate Name (A-Z), then by Battery Size (Largest First)
+            return sorted.sort((a, b) => {
+                const affCompare = a.affiliate.localeCompare(b.affiliate);
+                if (affCompare !== 0) return affCompare;
+                return b.batteries - a.batteries;
+            });
+        case 'default':
+        default:
+            return sorted.sort((a, b) => b.batteries - a.batteries);
+    }
+};
+
+export const allocateBatteries = (inputClients, inputLocations, exclusiveAffiliateNames = [], pinnedAllocations = [], toleranceMin = 0, toleranceMax = 0, strategy = 'default') => {
     const MAX_RETRIES = 10;
     let retryCount = 0;
     let capacityBoost = 0; // Progressively relax target on retries
     const pinnedClientNames = new Set(pinnedAllocations.map(p => p.clientName));
 
     // Deduplicate input clients by name to prevent "ghost" duplicates from data sources
-    // This resolves the issue where a client appears in multiple locations due to duplicate CSV rows
-    // Deduplicate input clients by name to prevent "ghost" duplicates from data sources
     const uniqueClientsMap = new Map();
-    // Helper to normalize names for deduplication (trim spaces, handle case potentially?)
-    // For now, just trim to avoid "Thomas Blaszak" vs "Thomas Blaszak " issues
     const normalizeName = (name) => name ? name.trim() : '';
 
     inputClients.forEach(c => {
@@ -312,7 +351,9 @@ export const allocateBatteries = (inputClients, inputLocations, exclusiveAffilia
         if (pinnedAllocations.length > 0) {
             pinnedAllocations.forEach(pin => {
                 const normalizedPinName = normalizeName(pin.clientName);
-                const client = clients.find(c => c.name === normalizedPinName);
+                // Find index to modify the actual object in the array
+                const clientIndex = clients.findIndex(c => c.name === normalizedPinName);
+                const client = clients[clientIndex];
                 const location = locations.find(l => l.id === pin.locationId);
 
                 // Safety check: Don't allocate if already allocated (prevents duplicate pins issue)
@@ -334,6 +375,36 @@ export const allocateBatteries = (inputClients, inputLocations, exclusiveAffilia
             });
         }
 
+        // 1.5. Place clients with initialLocationId (from import/PDF) 
+        // These serve as "soft pins" - respected if capacity allows
+        clients.forEach(c => {
+            if (c.allocated || !c.initialLocationId) return;
+
+            const loc = locations.find(l => l.id === c.initialLocationId);
+            if (!loc) return;
+
+            // Prioritize placement if capacity exists
+            if (loc.remainingCapacity >= c.batteries) {
+                // Respect existing exclusive owners if any
+                if (loc.exclusiveOwners.size > 0 && !loc.exclusiveOwners.has(c.affiliate)) return;
+
+                loc.allocations.push({
+                    clientId: c.id,
+                    clientName: c.name,
+                    amount: c.batteries,
+                    affiliate: c.affiliate
+                });
+                loc.remainingCapacity -= c.batteries;
+                loc.affiliatesHosted.add(c.affiliate);
+                c.allocated = true;
+                c.locationId = loc.id;
+
+                if (exclusiveAffiliateNames.includes(c.affiliate)) {
+                    loc.exclusiveOwners.add(c.affiliate);
+                }
+            }
+        });
+
         // 1b. Place exclusive affiliate groups
         const affiliateGroups = {};
         clients.forEach(c => {
@@ -346,10 +417,11 @@ export const allocateBatteries = (inputClients, inputLocations, exclusiveAffilia
             .filter(([name]) => exclusiveAffiliateNames.includes(name))
             .map(([name, group]) => ({
                 name,
-                clients: group,
+                // Sort clients within exclusive groups based on strategy
+                clients: sortClients(group, strategy),
                 totalDemand: group.reduce((sum, c) => sum + c.batteries, 0)
             }))
-            .sort((a, b) => a.totalDemand - b.totalDemand); // Smallest first for better packing
+            .sort((a, b) => a.totalDemand - b.totalDemand); // Smallest total demand first for better packing
 
         for (let group of exclusiveGroups) {
             let possibleLocs = locations.filter(loc => {
@@ -428,11 +500,11 @@ export const allocateBatteries = (inputClients, inputLocations, exclusiveAffilia
             .filter(([name]) => !exclusiveAffiliateNames.includes(name))
             .map(([name, group]) => ({
                 name,
-                clients: group.filter(c => !c.allocated),
+                clients: sortClients(group.filter(c => !c.allocated), strategy),
                 totalDemand: group.filter(c => !c.allocated).reduce((sum, c) => sum + c.batteries, 0)
             }))
             .filter(g => g.clients.length > 0)
-            .sort((a, b) => b.totalDemand - a.totalDemand); // Largest first
+            .sort((a, b) => b.totalDemand - a.totalDemand); // Largest total demand first
 
         for (let group of nonExclusiveGroups) {
             // Can only use locations that have NO exclusive owners
@@ -445,10 +517,14 @@ export const allocateBatteries = (inputClients, inputLocations, exclusiveAffilia
             });
 
             // Sort: affinity first, then best fit (smallest sufficient)
+            // Sort: best fit, or affinity if 'affiliate-grouping'
             possibleLocs.sort((a, b) => {
-                const aAff = affinityLocIds.has(a.id) ? 1 : 0;
-                const bAff = affinityLocIds.has(b.id) ? 1 : 0;
-                if (aAff !== bAff) return bAff - aAff;
+                // Only consider affinity if specifically grouping by affiliate
+                if (strategy === 'affiliate-grouping') {
+                    const aAff = affinityLocIds.has(a.id) ? 1 : 0;
+                    const bAff = affinityLocIds.has(b.id) ? 1 : 0;
+                    if (aAff !== bAff) return bAff - aAff;
+                }
                 return a.remainingCapacity - b.remainingCapacity;
             });
 
@@ -471,13 +547,15 @@ export const allocateBatteries = (inputClients, inputLocations, exclusiveAffilia
             // Must split across locations — fewest possible
             if (!placed) {
                 possibleLocs.sort((a, b) => {
-                    const aAff = affinityLocIds.has(a.id) ? 1 : 0;
-                    const bAff = affinityLocIds.has(b.id) ? 1 : 0;
-                    if (aAff !== bAff) return bAff - aAff;
+                    if (strategy === 'affiliate-grouping') {
+                        const aAff = affinityLocIds.has(a.id) ? 1 : 0;
+                        const bAff = affinityLocIds.has(b.id) ? 1 : 0;
+                        if (aAff !== bAff) return bAff - aAff;
+                    }
                     return b.remainingCapacity - a.remainingCapacity; // Largest first for fewer splits
                 });
 
-                let remaining = [...group.clients].sort((a, b) => b.batteries - a.batteries);
+                let remaining = [...group.clients];
                 for (let loc of possibleLocs) {
                     if (remaining.length === 0) break;
                     if (loc.remainingCapacity <= 0) continue;
@@ -514,9 +592,10 @@ export const allocateBatteries = (inputClients, inputLocations, exclusiveAffilia
             loc.remainingCapacity = loc.originalCapacity - used;
         });
 
-        stillUnallocated.sort((a, b) => b.batteries - a.batteries);
+        // Sort unallocated according to strategy for final pass
+        const sortedUnallocated = sortClients(stillUnallocated, strategy);
 
-        for (let client of stillUnallocated) {
+        for (let client of sortedUnallocated) {
             const isExclusive = exclusiveAffiliateNames.includes(client.affiliate);
             let possibleLocs = locations.filter(loc => {
                 if (loc.remainingCapacity < client.batteries) return false;
@@ -532,12 +611,26 @@ export const allocateBatteries = (inputClients, inputLocations, exclusiveAffilia
                 return true;
             });
 
-            // Prefer affinity (where affiliate already is), then best fit
+            // Strategy-based location sorting
             possibleLocs.sort((a, b) => {
-                const aHas = a.affiliatesHosted.has(client.affiliate) ? 1 : 0;
-                const bHas = b.affiliatesHosted.has(client.affiliate) ? 1 : 0;
-                if (aHas !== bHas) return bHas - aHas;
-                return a.remainingCapacity - b.remainingCapacity;
+                // Only prioritize affinity (where affiliate already is) for 'affiliate-grouping'
+                if (strategy === 'affiliate-grouping') {
+                    const aHas = a.affiliatesHosted.has(client.affiliate) ? 1 : 0;
+                    const bHas = b.affiliatesHosted.has(client.affiliate) ? 1 : 0;
+                    if (aHas !== bHas) return bHas - aHas;
+                }
+
+                // Strategy-based location sorting
+                if (strategy === 'default') {
+                    // Largest First: Prioritize locations with MORE remaining capacity (fill big buckets)
+                    return b.remainingCapacity - a.remainingCapacity;
+                } else if (strategy === 'smallest') {
+                    // Smallest First: Prioritize locations with LESS remaining capacity (fill small buckets / best fit)
+                    return a.remainingCapacity - b.remainingCapacity;
+                } else {
+                    // Others (Alpha, Round Robin, Affiliate Grouping): Default to Best Fit (efficient packing)
+                    return a.remainingCapacity - b.remainingCapacity;
+                }
             });
 
             if (possibleLocs.length > 0) {

@@ -13,6 +13,7 @@ import SidebarControls from '@/components/controls/SidebarControls';
 import { theme } from '@/lib/theme';
 import { useToast } from '@/contexts/ToastContext';
 import OverflowModal from '@/components/OverflowModal';
+import ClientListView from '@/components/ClientListView';
 
 export default function Home() {
     const { showToast } = useToast();
@@ -29,10 +30,11 @@ export default function Home() {
     const [runId, setRunId] = useState(0);
     const [targetUtilization, setTargetUtilization] = useState(100);
     const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+    const [distributionStrategy, setDistributionStrategy] = useState('default');
 
     // Ref for auto-save state to avoid interval reset and hook errors
-    const stateRef = React.useRef({ customData, pinnedAllocations, exclusiveAffiliates, targetUtilization, useAdjustedCounts });
-    stateRef.current = { customData, pinnedAllocations, exclusiveAffiliates, targetUtilization, useAdjustedCounts };
+    const stateRef = React.useRef({ customData, pinnedAllocations, exclusiveAffiliates, targetUtilization, useAdjustedCounts, distributionStrategy });
+    stateRef.current = { customData, pinnedAllocations, exclusiveAffiliates, targetUtilization, useAdjustedCounts, distributionStrategy };
 
     // Auto-save mechanism (every 5 minutes)
     useEffect(() => {
@@ -155,6 +157,7 @@ export default function Home() {
             setTargetUtilization(100);
             setCustomData(null);
             setUseAdjustedCounts(false);
+            setDistributionStrategy('default');
             setGlobalSearch("");
             setRunId(prev => prev + 1);
             try {
@@ -174,9 +177,10 @@ export default function Home() {
             exclusiveAffiliates,
             pinnedAllocations,
             effectiveTolerance,
-            0
+            0,
+            distributionStrategy
         );
-    }, [clients, locations, exclusiveAffiliates, pinnedAllocations, runId, targetUtilization]);
+    }, [clients, locations, exclusiveAffiliates, pinnedAllocations, runId, targetUtilization, distributionStrategy]);
 
     // Persist transient state for Print Manifest
     useEffect(() => {
@@ -198,19 +202,51 @@ export default function Home() {
         setRunId(r => r + 1);
     };
 
-    // FILTERED LOCATIONS for Search
-    const filteredLocations = useMemo(() => {
-        if (!globalSearch.trim()) return allocatedLocations;
+    const [locationSort, setLocationSort] = useState('name-asc');
 
-        const term = globalSearch.toLowerCase();
-        return allocatedLocations.filter(loc => {
-            // Check location name
-            if (loc.name.toLowerCase().includes(term)) return true;
-            // Check clients in location
-            if (loc.allocations.some(a => a.clientName.toLowerCase().includes(term))) return true;
-            return false;
+    // ... (existing code)
+
+    // FILTERED LOCATIONS for Search & Sort
+    const filteredLocations = useMemo(() => {
+        let result = allocatedLocations;
+
+        // 1. Filter by Search
+        if (globalSearch.trim()) {
+            const term = globalSearch.toLowerCase();
+            result = result.filter(loc => {
+                // Check location name
+                if (loc.name.toLowerCase().includes(term)) return true;
+                // Check clients in location
+                if (loc.allocations.some(a => a.clientName.toLowerCase().includes(term))) return true;
+                return false;
+            });
+        }
+
+        // 2. Sort Results
+        return [...result].sort((a, b) => {
+            switch (locationSort) {
+                case 'name-asc':
+                    return a.name.localeCompare(b.name);
+                case 'capacity-desc':
+                    return b.capacity - a.capacity;
+                case 'capacity-asc':
+                    return a.capacity - b.capacity;
+                case 'available-desc':
+                    return b.remainingCapacity - a.remainingCapacity;
+                case 'available-asc':
+                    return a.remainingCapacity - b.remainingCapacity;
+                case 'utilization-desc': {
+                    const utilA = (a.capacity - a.remainingCapacity) / a.capacity;
+                    const utilB = (b.capacity - b.remainingCapacity) / b.capacity;
+                    return utilB - utilA;
+                }
+                default:
+                    return 0;
+            }
         });
-    }, [allocatedLocations, globalSearch]);
+    }, [allocatedLocations, globalSearch, locationSort]);
+
+    // ... (existing code)
 
 
     const unallocatedClients = processedClients ? processedClients.filter(c => !c.allocated) : [];
@@ -246,6 +282,15 @@ export default function Home() {
 
         showToast(`Exported ${rows.length - 1} rows to CSV`, 'success');
     };
+
+    // Data Debugging
+    console.log('--- RENDER DEBUG ---');
+    console.log('Locations:', locations.length);
+    console.log('Clients:', clients.length);
+    console.log('Allocated Locations:', allocatedLocations?.length);
+    console.log('Filtered Locations:', filteredLocations?.length);
+    console.log('View Mode:', viewMode);
+    console.log('Global Search:', globalSearch);
 
     // --- Header Content ---
     const headerContent = (
@@ -311,6 +356,7 @@ export default function Home() {
                         setExclusiveAffiliates(state.exclusiveAffiliates || []);
                         setTargetUtilization(state.targetUtilization ?? 100);
                         setUseAdjustedCounts(state.useAdjustedCounts ?? false);
+                        setDistributionStrategy(state.distributionStrategy || 'default');
                         setRunId(prev => prev + 1);
                         showToast('Project loaded', 'success');
                     }}
@@ -320,6 +366,7 @@ export default function Home() {
                         setTargetUtilization(100);
                         setCustomData(null);
                         setUseAdjustedCounts(false);
+                        setDistributionStrategy('default');
                         setGlobalSearch('');
                         setRunId(prev => prev + 1);
                         showToast('Started new project', 'info');
@@ -338,58 +385,147 @@ export default function Home() {
                         setRunId(prev => prev + 1);
                         showToast('Cleared all pins and exclusive affiliates', 'info');
                     }}
+                    distributionStrategy={distributionStrategy}
+                    setDistributionStrategy={setDistributionStrategy}
                 />
             }
             headerContent={headerContent}
         >
             <div style={{ marginRight: (selectedLocation || selectedAffiliate) ? '416px' : '0', transition: 'margin-right 0.3s ease' }}>
                 {/* Top Stats & View Switcher */}
-                <div style={{ marginBottom: '24px', display: 'flex', gap: '24px', alignItems: 'flex-start', flexWrap: 'wrap' }}>
-                    <div style={{ flex: 1 }}>
+                <div style={{ marginBottom: '24px' }}>
+
+                    {/* Validation Stats (Full Width) */}
+                    <div style={{ marginBottom: '16px' }}>
                         <ValidationStats
                             locations={allocatedLocations}
                             totalClients={clients.length}
                             unallocatedList={unallocatedClients}
                         />
                     </div>
-                    <div style={{
-                        backgroundColor: 'var(--color-surface)',
-                        padding: '4px',
-                        borderRadius: '8px',
-                        border: '1px solid var(--color-border)',
-                        display: 'flex',
-                        gap: '4px',
-                        height: 'fit-content'
-                    }}>
-                        <button
-                            onClick={() => setViewMode('locations')}
-                            className="btn"
-                            style={{
-                                backgroundColor: viewMode === 'locations' ? '#eff6ff' : 'transparent',
-                                color: viewMode === 'locations' ? 'var(--color-primary)' : 'var(--color-text-secondary)',
-                                fontWeight: '600',
-                                fontSize: '0.875rem',
-                                border: 'none'
-                            }}
-                        >
-                            Locations
-                        </button>
-                        <button
-                            onClick={() => setViewMode('affiliates')}
-                            className="btn"
-                            style={{
-                                backgroundColor: viewMode === 'affiliates' ? '#eff6ff' : 'transparent',
-                                color: viewMode === 'affiliates' ? 'var(--color-primary)' : 'var(--color-text-secondary)',
-                                fontWeight: '600',
-                                fontSize: '0.875rem',
-                                border: 'none'
-                            }}
-                        >
-                            Affiliates
-                        </button>
+
+                    {/* Controls Row: Search + View Toggle */}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '16px' }}>
+
+                        {/* Global Search Input */}
+                        <div style={{ position: 'relative', flex: 1, maxWidth: '400px' }}>
+                            <span style={{
+                                position: 'absolute',
+                                left: '12px',
+                                top: '50%',
+                                transform: 'translateY(-50%)',
+                                color: '#94a3b8',
+                                fontSize: '1rem'
+                            }}>🔍</span>
+                            <input
+                                type="text"
+                                placeholder="Search clients, affiliates, or locations..."
+                                value={globalSearch}
+                                onChange={(e) => setGlobalSearch(e.target.value)}
+                                style={{
+                                    width: '100%',
+                                    padding: '10px 12px 10px 40px',
+                                    borderRadius: '8px',
+                                    border: '1px solid var(--color-border)',
+                                    backgroundColor: 'var(--color-surface)',
+                                    color: 'var(--color-text-primary)',
+                                    fontSize: '0.9rem',
+                                    outline: 'none',
+                                    boxShadow: '0 1px 2px rgba(0,0,0,0.05)'
+                                }}
+                            />
+                        </div>
+
+                        {/* Order Sort Controls (Only for Locations View) */}
+                        {viewMode === 'locations' && (
+                            <div style={{ display: 'flex', gap: '8px', marginLeft: 'auto' }}>
+                                <select
+                                    value={locationSort}
+                                    onChange={(e) => setLocationSort(e.target.value)}
+                                    style={{
+                                        padding: '8px 12px',
+                                        borderRadius: '8px',
+                                        border: '1px solid var(--color-border)',
+                                        backgroundColor: 'var(--color-surface)',
+                                        color: 'var(--color-text-primary)',
+                                        fontSize: '0.85rem',
+                                        outline: 'none',
+                                        cursor: 'pointer'
+                                    }}
+                                >
+                                    <option value="name-asc">Sort by Name (A-Z)</option>
+                                    <option value="capacity-desc">Capacity (High → Low)</option>
+                                    <option value="capacity-asc">Capacity (Low → High)</option>
+                                    <option value="available-desc">Availability (High → Low)</option>
+                                    <option value="available-asc">Availability (Low → High)</option>
+                                    <option value="utilization-desc">Utilization (High → Low)</option>
+                                </select>
+                            </div>
+                        )}
+
+                        {/* View Mode Toggle */}
+                        <div style={{
+                            backgroundColor: 'var(--color-surface)',
+                            padding: '4px',
+                            borderRadius: '8px',
+                            border: '1px solid var(--color-border)',
+                            display: 'flex',
+                            gap: '4px',
+                            height: 'fit-content'
+                        }}>
+                            <button
+                                onClick={() => setViewMode('locations')}
+                                className="btn"
+                                style={{
+                                    backgroundColor: viewMode === 'locations' ? '#eff6ff' : 'transparent',
+                                    color: viewMode === 'locations' ? 'var(--color-primary)' : 'var(--color-text-secondary)',
+                                    fontWeight: '600',
+                                    fontSize: '0.875rem',
+                                    border: 'none',
+                                    cursor: 'pointer',
+                                    padding: '6px 12px',
+                                    borderRadius: '6px'
+                                }}
+                            >
+                                Locations
+                            </button>
+                            <button
+                                onClick={() => setViewMode('affiliates')}
+                                className="btn"
+                                style={{
+                                    backgroundColor: viewMode === 'affiliates' ? '#eff6ff' : 'transparent',
+                                    color: viewMode === 'affiliates' ? 'var(--color-primary)' : 'var(--color-text-secondary)',
+                                    fontWeight: '600',
+                                    fontSize: '0.875rem',
+                                    border: 'none',
+                                    cursor: 'pointer',
+                                    padding: '6px 12px',
+                                    borderRadius: '6px'
+                                }}
+                            >
+                                Affiliates
+                            </button>
+                            <button
+                                onClick={() => setViewMode('clients')}
+                                className="btn"
+                                style={{
+                                    backgroundColor: viewMode === 'clients' ? '#eff6ff' : 'transparent',
+                                    color: viewMode === 'clients' ? 'var(--color-primary)' : 'var(--color-text-secondary)',
+                                    fontWeight: '600',
+                                    fontSize: '0.875rem',
+                                    border: 'none',
+                                    cursor: 'pointer',
+                                    padding: '6px 12px',
+                                    borderRadius: '6px'
+                                }}
+                            >
+                                All Clients
+                            </button>
+                        </div>
                     </div>
                 </div>
 
+                {/* Blank state when no data is loaded */}
                 {/* Blank state when no data is loaded */}
                 {locations.length === 0 && clients.length === 0 ? (
                     <div style={{
@@ -432,9 +568,8 @@ export default function Home() {
                     </div>
                 ) : (
                     <>
-
                         {/* Main Grid */}
-                        {viewMode === 'locations' ? (
+                        {viewMode === 'locations' && (
                             <div style={{
                                 display: 'grid',
                                 gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))',
@@ -458,7 +593,9 @@ export default function Home() {
                                     />
                                 ))}
                             </div>
-                        ) : (
+                        )}
+
+                        {viewMode === 'affiliates' && (
                             <div style={{ paddingBottom: '40px' }}>
                                 <AffiliateSummary locations={filteredLocations} />
                                 <AffiliateAllocations
@@ -466,6 +603,15 @@ export default function Home() {
                                     onAffiliateClick={setSelectedAffiliate}
                                 />
                             </div>
+                        )}
+
+                        {viewMode === 'clients' && (
+                            <ClientListView
+                                clients={clients}
+                                globalSearch={globalSearch}
+                                locations={allocatedLocations}
+                                onMoveClients={handlePinClients}
+                            />
                         )}
                     </>
                 )}

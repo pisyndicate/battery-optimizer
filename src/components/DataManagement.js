@@ -51,7 +51,7 @@ function parseExcel(buffer) {
 }
 
 function findHeaderRow(matrix) {
-    for (let i = 0; i < Math.min(matrix.length, 25); i++) {
+    for (let i = 0; i < Math.min(matrix.length, 500); i++) {
         const row = matrix[i];
         if (!row || row.length === 0 || row.every(c => !c)) continue;
         try {
@@ -72,26 +72,48 @@ async function parsePDF(buffer) {
         const content = await page.getTextContent();
 
         // Group text items by Y position to reconstruct rows
+        // Use a threshold for Y grouping (e.g. 4px) to handle slight misalignment
         const lineMap = new Map();
+
         content.items.forEach(item => {
             const y = Math.round(item.transform[5]); // Y position
-            if (!lineMap.has(y)) lineMap.set(y, []);
-            lineMap.get(y).push({ x: item.transform[4], text: item.str });
+            // Find existing Y that is very close
+            let foundY = y;
+            for (const key of lineMap.keys()) {
+                if (Math.abs(key - y) < 4) {
+                    foundY = key;
+                    break;
+                }
+            }
+
+            if (!lineMap.has(foundY)) lineMap.set(foundY, []);
+            // Force estimation of width based on char count to avoid "ghost width" issues with PDFJS.
+            // 4.5px per char is a conservative estimate for dense/small fonts.
+            lineMap.get(foundY).push({
+                x: item.transform[4],
+                text: item.str,
+                width: item.str.length * 4.5
+            });
         });
 
-        // Sort lines top-to-bottom (higher Y = higher on page)
         const sortedYs = Array.from(lineMap.keys()).sort((a, b) => b - a);
         sortedYs.forEach(y => {
             const items = lineMap.get(y).sort((a, b) => a.x - b.x);
-            // Use tab separation between items that have significant gaps
+
             let line = '';
             let lastX = -1;
+
             items.forEach(item => {
-                if (lastX >= 0 && item.x - lastX > 15) {
-                    line += '\t';
+                if (lastX >= 0) {
+                    const gap = item.x - lastX;
+                    if (gap > 15) {
+                        line += '\t';
+                    } else if (gap > 2) {
+                        line += ' ';
+                    }
                 }
                 line += item.text;
-                lastX = item.x + (item.text.length * 5); // approximate
+                lastX = item.x + item.width;
             });
             allText += line + '\n';
         });
@@ -289,6 +311,7 @@ function parseGroupedManifest(matrix) {
 
     if (headerIndices.length === 0) return null;
 
+    // If we have headers and it looks like an export (or multiple headers), try to parse
     const clients = [];
     const locations = [];
     const locationMap = new Map(); // name -> id
@@ -302,38 +325,78 @@ function parseGroupedManifest(matrix) {
         let locId = null;
         let locCap = 0;
 
-        // Search upwards for "Name (ID)" pattern
-        for (let offset = 1; offset <= 5; offset++) {
-            const rowIdx = headerIdx - offset;
-            if (rowIdx < 0) break;
-            const row = matrix[rowIdx];
-            if (!row || row.length === 0) continue;
+        // Detect column mapping for this section
+        const headerRow = matrix[headerIdx].map(c => String(c).toLowerCase().trim());
+        const hasLocationCol = headerRow.some(c => c.includes('location'));
 
-            const line = row.join(' ').trim();
+        // Default mapping (3 cols): Affiliate, Client, Units
+        let colMap = { affiliate: 0, client: 1, units: 2, location: -1 };
 
-            // Ignore capacity/summary lines
-            if (line.includes('/') || line.includes('Rem:') || line.includes('Total Locations')) continue;
-            // Ignore dates
-            if (line.match(/\d+\/\d+\/\d+/)) continue;
+        if (hasLocationCol) {
+            // New 4-col layout: Location, Affiliate, Client, Units
+            // But we need to be dynamic to be safe.
+            // Simple heuristic: If 4 cols, assume Loc, Aff, Client, Units?
+            // Or look for indices
+            const locIdx = headerRow.findIndex(c => c.includes('location'));
+            const affIdx = headerRow.findIndex(c => c.includes('affiliate'));
+            const cliIdx = headerRow.findIndex(c => c.includes('client'));
+            const unitIdx = headerRow.findIndex(c => c.includes('units') || c.includes('batteries'));
 
-            // Check for "Name (ID)" pattern
-            const idMatch = line.match(/(.+)\s+\((.+)\)$/);
-            if (idMatch) {
-                locName = idMatch[1].trim();
-                locId = idMatch[2].trim();
-                break;
+            if (locIdx !== -1 && affIdx !== -1 && cliIdx !== -1 && unitIdx !== -1) {
+                colMap = { affiliate: affIdx, client: cliIdx, units: unitIdx, location: locIdx };
             }
+        }
 
-            // Partial ID match or just Name
-            if (line.startsWith('(') && line.endsWith(')')) continue; // Orphan ID
+        // Search upwards for "Name (ID)" pattern (Group Header)
+        // Only do this if we DO NOT have a Location Column.
+        // If we have a Location Column, the location is IN the data row, not above.
+        // Search upwards for "Name (ID)" pattern (Group Header)
+        // Only do this if we DO NOT have a Location Column.
+        if (!hasLocationCol) {
+            for (let offset = 1; offset <= 5; offset++) {
+                const rowIdx = headerIdx - offset;
+                if (rowIdx < 0) break;
+                const row = matrix[rowIdx];
+                if (!row || row.length === 0) continue;
 
-            // Fallback: This line is likely the name if it's text
-            // Avoid capturing garbage
-            if (locName === null &&
-                line !== 'Allocation Manifest' &&
-                !line.includes('Page ') &&
-                line.length > 2) {
-                locName = line;
+                const line = row.join(' ').trim();
+
+                // Ignore capacity/summary lines
+                if (line.includes('/') || line.includes('Rem:') || line.includes('Total Locations')) continue;
+                // Ignore dates
+                if (line.match(/\d+\/\d+\/\d+/)) continue;
+
+                // Check for "Name (ID)" pattern
+                const idMatch = line.match(/(.+)\s+\((.+)\)$/);
+                if (idMatch) {
+                    locName = idMatch[1].trim();
+                    locId = idMatch[2].trim();
+                    break;
+                }
+
+                // Partial ID match
+                if (line.startsWith('(') && line.endsWith(')')) continue; // Orphan ID
+
+                // Fallback: This line is likely the name if it's text
+                // Avoid capturing garbage
+                if (locName === null &&
+                    line !== 'Allocation Manifest' &&
+                    !line.includes('Page ') &&
+                    line.length > 2 &&
+                    line.split(' ').length < 6) {
+                    locName = line;
+                }
+            }
+        }
+
+        if (hasLocationCol && !locName) {
+            // Peek at first data row
+            const firstDataRow = matrix[headerIdx + 1];
+            if (firstDataRow && firstDataRow.length > colMap.location) {
+                const potentialName = firstDataRow[colMap.location];
+                if (potentialName && potentialName.split(' ').length < 6) {
+                    locName = potentialName;
+                }
             }
         }
 
@@ -346,20 +409,57 @@ function parseGroupedManifest(matrix) {
                 if (!locId) locId = `LOC_${locName.replace(/[^a-zA-Z0-9]/g, '_').toUpperCase()}`;
 
                 if (!locationMap.has(locName)) {
-                    // Try to find capacity
-                    for (let offset = 1; offset <= 3; offset++) {
+                    // Try to find capacity in the vicinity (look 1-4 lines up)
+                    // Pattern: "LocationName (RExxxx) Used / Capacity"
+                    // Also robustly ignore dates (e.g. 2/13/26) and URLs.
+                    let bestCap = null;
+
+                    for (let offset = 1; offset <= 4; offset++) {
                         const r = matrix[headerIdx - offset];
                         if (r) {
                             const l = r.join(' ');
-                            if (l.includes('/')) {
+
+                            // 1. Check for explicit (RExxxx) line with Capacity style "X / Y" or "X / Y Rem"
+                            // Matches "5,004 / 5,004" or "838 / 951"
+                            // Regex updated to allow spaces: "( RE 0305 )"
+                            const reMatch = l.match(/\(\s*RE\d+\s*\).*?([\d,]+)\s*\/\s*([\d,]+)/i);
+                            if (reMatch) {
+                                // High confidence, this is the location line
+                                bestCap = parseNum(reMatch[2]);
+                                locName = l.split(/\s+\d+\s*\//)[0].trim(); // Extract name part before numbers
+                                // Clean up trailing garbage if needed
+                                if (locName.includes('(')) {
+                                    // keep (RExxxx) part? It's usually good.
+                                    // The user wants clean names. "Aurora (RE0305)" is fine.
+                                }
+                                break;
+                            }
+
+                            // 2. Fallback: Just look for "X / Y" avoiding dates
+                            if (l.includes('/') && !bestCap) {
+                                if (l.match(/\d+\/\d+\/\d+/) || l.includes('http') || l.includes('localhost')) continue;
                                 const parts = l.split('/');
                                 if (parts.length > 1) {
-                                    const cap = parseNum(parts[1].split('(')[0]);
-                                    if (!isNaN(cap)) locCap = cap;
+                                    // "Used / Total" -> we want Total (index 1) which might have "Rem: ..." attached
+                                    // clean it up:
+                                    let rawCap = parts[1].replace(/Rem:.*$/i, '').trim();
+                                    // remove non-numeric except comma
+                                    // actually parseNum handles commas.
+                                    // But if it's "5,004 Rem: 113", parseNum("5,004 Rem: 113") might be weird?
+                                    // No, usually just takes valid number start.
+                                    const cap = parseNum(rawCap.split(' ')[0]); // Take first token after slash
+                                    if (!isNaN(cap) && cap > 20) { // Capacity usually > 20? 
+                                        // If it finds "1 / 32" (page num), cap=32 might be dangerously low but valid? 
+                                        // But user sees "13 / 13" which was wrong.
+                                        // Let's rely heavily on the RE match. 
+                                        // If fallback is used, ensure > 50?
+                                        bestCap = cap;
+                                    }
                                 }
                             }
                         }
                     }
+                    if (bestCap) locCap = bestCap;
 
                     locations.push({ id: locId, name: locName, capacity: locCap || 1000 });
                     locationMap.set(locName, locId);
@@ -400,17 +500,38 @@ function parseGroupedManifest(matrix) {
             ) continue;
 
             let affiliate = '', client = '', units = 0;
+            const cleanRow = row.filter(c => c && c.trim().length > 0);
 
-            if (row.length >= 3) {
-                affiliate = row[0];
-                client = row[1];
-                units = parseNum(row[2]);
-            } else if (row.length === 2) {
-                // Try to guess
-                const last = parseNum(row[row.length - 1]);
-                if (!isNaN(last)) {
-                    units = last;
-                    client = row[0];
+            // Dynamic mapping based on content length
+            if (hasLocationCol) {
+                if (cleanRow.length === 3) {
+                    // Implied location: [Affiliate, Client, Units]
+                    affiliate = cleanRow[0];
+                    client = cleanRow[1];
+                    units = parseNum(cleanRow[2]);
+                } else if (cleanRow.length >= 4) {
+                    // Explicit location: [Location, Affiliate, Client, Units] (mapped by index)
+                    // If cleanRow handles it, great. If using raw 'row' with gaps, use colMap.
+                    // colMap relies on index. 
+                    // To be safe, let's use the explicit map if length is sufficient.
+                    affiliate = row[colMap.affiliate];
+                    client = row[colMap.client];
+                    units = parseNum(row[colMap.units]);
+                } else {
+                    // Try standard map anyway
+                    affiliate = row[colMap.affiliate];
+                    client = row[colMap.client];
+                    units = parseNum(row[colMap.units]);
+                }
+            } else {
+                // Fallback valid for 3-col (No Location Column)
+                if (cleanRow.length >= 3) {
+                    affiliate = row[colMap.affiliate];
+                    client = row[colMap.client];
+                    units = parseNum(row[colMap.units]);
+                } else if (cleanRow.length === 2) {
+                    units = parseNum(cleanRow[1]);
+                    client = cleanRow[0];
                 }
             }
 
@@ -420,14 +541,33 @@ function parseGroupedManifest(matrix) {
                 cLower === 'units' ||
                 cLower === 'affiliate' ||
                 cLower.includes('page ') ||
-                cLower.includes('generated')) continue;
+                cLower.includes('generated') ||
+                cLower.startsWith('(') || // Matches (RE0302)
+                cLower.includes('(re') || // Matches inner (RExxxx)
+                cLower.includes('used') || // Matches capacity line
+                cLower.includes('capacity') ||
+                /^\d/.test(cLower) || // Matches ANY number at start (Location Headers like 0 Dade)
+                /^\d+\s+[nsew]\.?\s+/i.test(cLower) // Matches 412 N Main, 12 S St
+            ) continue;
+
+            const aLower = (affiliate || '').toLowerCase();
+            // Sanitize Affiliate - if invalid, clear it but KEEP THE ROW (unless client is also invalid)
+            if (aLower.startsWith('(') ||
+                aLower.includes('(re') ||
+                aLower.includes('used') ||
+                aLower.includes('capacity') ||
+                /^\d/.test(aLower) // Affiliate shouldn't start with a number
+            ) {
+                affiliate = 'Unknown';
+            }
 
             if (client && !isNaN(units)) {
                 clients.push({
                     id: `c_pdf_${Math.random().toString(36).substr(2, 9)}`,
                     name: client,
                     batteries: units,
-                    affiliate: affiliate || 'Unknown'
+                    affiliate: affiliate || 'Unknown',
+                    initialLocationId: locId // specific to PDF parsing where location is known
                 });
             }
         }

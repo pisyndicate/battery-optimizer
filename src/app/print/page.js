@@ -116,34 +116,36 @@ export default function PrintPage() {
                     });
 
                     return (
-                        <div key={loc.id} style={{ breakInside: 'avoid', marginBottom: '32px', border: '1px solid #ccc', padding: '16px' }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid #000', paddingBottom: '8px', marginBottom: '8px' }}>
-                                <h2 style={{ fontSize: '18px', margin: 0 }}>{loc.name} ({loc.id})</h2>
+                        <div key={loc.id} style={{ breakInside: 'avoid', marginBottom: '32px', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '16px', backgroundColor: '#fff' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '2px solid #1e293b', paddingBottom: '12px', marginBottom: '16px' }}>
+                                <h2 style={{ fontSize: '18px', margin: 0, color: '#0f172a' }}>{loc.name} <span style={{ color: '#64748b', fontSize: '14px', fontWeight: 'normal' }}>({loc.id})</span></h2>
                                 <div>
-                                    <strong>{currentTotal.toLocaleString()} / {loc.capacity.toLocaleString()}</strong>
-                                    <span style={{ marginLeft: '12px', fontSize: '0.9em', color: loc.remainingCapacity > 0 ? '#000' : '#666' }}>
-                                        (Rem: {loc.remainingCapacity.toLocaleString()})
+                                    <strong style={{ fontSize: '16px' }}>{currentTotal.toLocaleString()} / {loc.capacity.toLocaleString()}</strong>
+                                    <span style={{ marginLeft: '12px', fontSize: '14px', color: loc.remainingCapacity > 0 ? '#166534' : '#991b1b', backgroundColor: loc.remainingCapacity > 0 ? '#dcfce7' : '#fee2e2', padding: '2px 8px', borderRadius: '4px' }}>
+                                        {loc.remainingCapacity > 0 ? `Rem: ${loc.remainingCapacity.toLocaleString()}` : 'Full'}
                                     </span>
                                 </div>
                             </div>
 
-                            <table style={{ width: '100%', fontSize: '12px', borderCollapse: 'collapse' }}>
+                            <table style={{ width: '100%', fontSize: '13px', borderCollapse: 'collapse' }}>
                                 <thead>
-                                    <tr style={{ borderBottom: '1px solid #999', textAlign: 'left' }}>
-                                        <th style={{ padding: '4px' }}>Affiliate</th>
-                                        <th style={{ padding: '4px' }}>Client</th>
-                                        <th style={{ padding: '4px', textAlign: 'right' }}>Units</th>
+                                    <tr style={{ borderBottom: '1px solid #cbd5e1', textAlign: 'left', backgroundColor: '#f1f5f9' }}>
+                                        <th style={{ padding: '8px', color: '#475569', width: '25%' }}>Location</th>
+                                        <th style={{ padding: '8px', color: '#475569', width: '25%' }}>Affiliate</th>
+                                        <th style={{ padding: '8px', color: '#475569', width: '35%' }}>Client</th>
+                                        <th style={{ padding: '8px', color: '#475569', width: '15%', textAlign: 'right' }}>Units</th>
                                     </tr>
                                 </thead>
                                 <tbody>
                                     {sortedAllocations.length === 0 ? (
-                                        <tr><td colSpan="3" style={{ padding: '8px', textAlign: 'center', fontStyle: 'italic' }}>Empty</td></tr>
+                                        <tr><td colSpan="4" style={{ padding: '12px', textAlign: 'center', fontStyle: 'italic', color: '#94a3b8' }}>No allocations</td></tr>
                                     ) : (
                                         sortedAllocations.map((alloc, idx) => (
-                                            <tr key={idx} style={{ borderBottom: '1px solid #eee' }}>
-                                                <td style={{ padding: '4px' }}>{alloc.affiliate}</td>
-                                                <td style={{ padding: '4px' }}>{alloc.clientName}</td>
-                                                <td style={{ padding: '4px', textAlign: 'right' }}>{alloc.amount}</td>
+                                            <tr key={idx} style={{ borderBottom: '1px solid #f1f5f9', backgroundColor: idx % 2 === 0 ? '#fff' : '#f8fafc' }}>
+                                                <td style={{ padding: '8px 8px', color: '#64748b', fontWeight: '500' }}>{loc.name}</td>
+                                                <td style={{ padding: '8px 8px' }}>{alloc.affiliate}</td>
+                                                <td style={{ padding: '8px 8px', fontWeight: '500' }}>{alloc.clientName}</td>
+                                                <td style={{ padding: '8px 8px', textAlign: 'right', fontFamily: 'monospace', fontSize: '14px' }}>{alloc.amount}</td>
                                             </tr>
                                         ))
                                     )}
@@ -156,8 +158,25 @@ export default function PrintPage() {
 
             <style jsx global>{`
         @media print {
-            body { margin: 0; padding: 0; }
-            button { display: none; }
+            body { 
+                margin: 0; 
+                padding: 0; 
+                background: white; 
+                color: black;
+                font-size: 12pt;
+            }
+            button { display: none !important; }
+            .location-list > div {
+                break-inside: avoid;
+                page-break-inside: avoid;
+                border: 1px solid #ccc !important;
+                margin-bottom: 2cm;
+            }
+            table { width: 100%; }
+            thead { display: table-header-group; }
+            tr { break-inside: avoid; page-break-inside: avoid; }
+            h1 { font-size: 18pt; }
+            h2 { font-size: 14pt; }
         }
       `}</style>
         </div>

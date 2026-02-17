@@ -174,7 +174,9 @@ const SidebarControls = ({
     onNewProject,
     currentStateFn,
     onMasterReset,
-    onClearCustomizations
+    onClearCustomizations,
+    distributionStrategy,
+    setDistributionStrategy
 }) => {
     const { showToast } = useToast();
 
@@ -270,6 +272,20 @@ const SidebarControls = ({
                             onChange={(e) => setTargetUtilization(Number(e.target.value))}
                             style={{ width: '100%', accentColor: 'var(--color-primary)' }}
                         />
+                    </div>
+
+                    <div style={{ marginBottom: '12px' }}>
+                        <div style={{ fontSize: '0.72rem', color: '#64748b', marginBottom: '4px' }}>Distribution Strategy</div>
+                        <SidebarSelect
+                            value={distributionStrategy}
+                            onChange={(e) => setDistributionStrategy(e.target.value)}
+                        >
+                            <option value="default">Default (Largest First)</option>
+                            <option value="smallest">Smallest First</option>
+                            <option value="alpha">Alphabetical (A-Z)</option>
+                            <option value="round-robin">Round Robin (Interleave)</option>
+                            <option value="affiliate-grouping">Affiliate Grouping</option>
+                        </SidebarSelect>
                     </div>
 
                     <label style={{

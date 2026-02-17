@@ -53,8 +53,7 @@ const ValidationStats = ({ locations, totalClients, unallocatedList = [] }) => {
     };
 
     const handleDragStart = (e, client) => {
-        // If the dragged item is not in selection, drag only it
-        // If it IS in selection, drag all selected items
+        // ... (unchanged)
         let itemsToDrag = [];
         if (selectedClients.has(client.name)) {
             itemsToDrag = Array.from(selectedClients);
@@ -65,6 +64,39 @@ const ValidationStats = ({ locations, totalClients, unallocatedList = [] }) => {
         e.dataTransfer.setData('application/json', JSON.stringify({ type: 'CLIENT_DRAG', clients: itemsToDrag }));
         e.dataTransfer.effectAllowed = 'copy';
     };
+
+    // ── Search & Sort Logic ────────────────────────────
+    const [searchTerm, setSearchTerm] = useState("");
+    const [sortConfig, setSortConfig] = useState({ key: 'name', direction: 'asc' });
+
+    const displayedClients = React.useMemo(() => {
+        let result = [...unallocatedList];
+
+        // 1. Filter
+        if (searchTerm.trim()) {
+            const lowerTerm = searchTerm.toLowerCase();
+            result = result.filter(c =>
+                c.name.toLowerCase().includes(lowerTerm) ||
+                (c.affiliate && c.affiliate.toLowerCase().includes(lowerTerm))
+            );
+        }
+
+        // 2. Sort
+        result.sort((a, b) => {
+            let valA = a[sortConfig.key];
+            let valB = b[sortConfig.key];
+
+            // Normalize strings
+            if (typeof valA === 'string') valA = valA.toLowerCase();
+            if (typeof valB === 'string') valB = valB.toLowerCase();
+
+            if (valA < valB) return sortConfig.direction === 'asc' ? -1 : 1;
+            if (valA > valB) return sortConfig.direction === 'asc' ? 1 : -1;
+            return 0;
+        });
+
+        return result;
+    }, [unallocatedList, searchTerm, sortConfig]);
 
     return (
         <div style={{
@@ -124,8 +156,45 @@ const ValidationStats = ({ locations, totalClients, unallocatedList = [] }) => {
                             {selectedClients.size === unallocatedList.length ? 'Deselect All' : 'Select All'}
                         </button>
                     </div>
+
+                    {/* ── Search & Sort Controls ── */}
+                    <div style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
+                        <input
+                            type="text"
+                            placeholder="Search clients..."
+                            value={searchTerm}
+                            onChange={(e) => setSearchTerm(e.target.value)}
+                            style={{
+                                flex: 1,
+                                padding: '4px 8px',
+                                borderRadius: '4px',
+                                border: '1px solid #ccc',
+                                fontSize: '0.85em'
+                            }}
+                        />
+                        <select
+                            value={`${sortConfig.key}-${sortConfig.direction}`}
+                            onChange={(e) => {
+                                const [key, direction] = e.target.value.split('-');
+                                setSortConfig({ key, direction });
+                            }}
+                            style={{
+                                padding: '4px 8px',
+                                borderRadius: '4px',
+                                border: '1px solid #ccc',
+                                fontSize: '0.85em',
+                                backgroundColor: '#fff'
+                            }}
+                        >
+                            <option value="name-asc">Name (A-Z)</option>
+                            <option value="name-desc">Name (Z-A)</option>
+                            <option value="batteries-desc">Size (High-Low)</option>
+                            <option value="batteries-asc">Size (Low-High)</option>
+                        </select>
+                    </div>
+
                     <ul style={{ margin: 0, padding: 0, listStyle: 'none', maxHeight: '200px', overflowY: 'auto' }}>
-                        {unallocatedList.map(c => (
+                        {displayedClients.map(c => (
                             <li
                                 key={c.id}
                                 draggable
@@ -150,6 +219,11 @@ const ValidationStats = ({ locations, totalClients, unallocatedList = [] }) => {
                                 </span>
                             </li>
                         ))}
+                        {displayedClients.length === 0 && (
+                            <li style={{ padding: '8px', color: '#666', fontStyle: 'italic', textAlign: 'center' }}>
+                                No clients match your search.
+                            </li>
+                        )}
                     </ul>
                 </div>
             )}
