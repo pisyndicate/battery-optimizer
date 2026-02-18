@@ -257,6 +257,13 @@ const optimizeAffiliateSpread = (locations, clients, exclusiveAffiliateNames, pi
         loc.affiliatesHosted = new Set(loc.allocations.map(a => a.affiliate));
     });
 
+    // Final cleanup: Ensure remainingCapacity and affiliatesHosted are perfectly consistent
+    locations.forEach(loc => {
+        const used = loc.allocations.reduce((sum, a) => sum + a.amount, 0);
+        loc.remainingCapacity = loc.originalCapacity - used;
+        loc.affiliatesHosted = new Set(loc.allocations.map(a => a.affiliate));
+    });
+
     return { locations, clients };
 };
 
@@ -525,6 +532,11 @@ export const allocateBatteries = (inputClients, inputLocations, exclusiveAffilia
                     const bAff = affinityLocIds.has(b.id) ? 1 : 0;
                     if (aAff !== bAff) return bAff - aAff;
                 }
+
+                if (strategy === 'default') {
+                    return b.originalCapacity - a.originalCapacity; // Original logic: Largest locations first
+                }
+
                 return a.remainingCapacity - b.remainingCapacity;
             });
 
@@ -552,7 +564,12 @@ export const allocateBatteries = (inputClients, inputLocations, exclusiveAffilia
                         const bAff = affinityLocIds.has(b.id) ? 1 : 0;
                         if (aAff !== bAff) return bAff - aAff;
                     }
-                    return b.remainingCapacity - a.remainingCapacity; // Largest first for fewer splits
+
+                    if (strategy === 'default') {
+                        return b.originalCapacity - a.originalCapacity;
+                    }
+
+                    return b.remainingCapacity - a.remainingCapacity; // Largest availability first for fewer splits
                 });
 
                 let remaining = [...group.clients];
@@ -622,7 +639,11 @@ export const allocateBatteries = (inputClients, inputLocations, exclusiveAffilia
 
                 // Strategy-based location sorting
                 if (strategy === 'default') {
-                    // Largest First: Prioritize locations with MORE remaining capacity (fill big buckets)
+                    // Largest First: Prioritize locations with LARGEST TOTAL CAPACITY (fill big buckets)
+                    // Tie-breaker: remaining capacity
+                    if (b.originalCapacity !== a.originalCapacity) {
+                        return b.originalCapacity - a.originalCapacity;
+                    }
                     return b.remainingCapacity - a.remainingCapacity;
                 } else if (strategy === 'smallest') {
                     // Smallest First: Prioritize locations with LESS remaining capacity (fill small buckets / best fit)

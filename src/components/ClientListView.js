@@ -78,6 +78,12 @@ const ClientListView = ({ clients, globalSearch, locations, onMoveClients }) => 
         }
     };
 
+    const totalSelectedBatteries = useMemo(() => {
+        return clients
+            .filter(c => selectedClients.has(c.name))
+            .reduce((sum, c) => sum + c.batteries, 0);
+    }, [clients, selectedClients]);
+
     const handleMove = () => {
         if (selectedClients.size === 0 || !targetLocationId) return;
         onMoveClients(Array.from(selectedClients), targetLocationId);
@@ -102,6 +108,11 @@ const ClientListView = ({ clients, globalSearch, locations, onMoveClients }) => 
                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                     <span style={{ fontWeight: '600', fontSize: '0.9rem' }}>
                         {selectedClients.size} selected
+                        {selectedClients.size > 0 && (
+                            <span style={{ color: 'var(--color-primary)', marginLeft: '4px' }}>
+                                ({totalSelectedBatteries.toLocaleString()} batteries)
+                            </span>
+                        )}
                     </span>
                     <button
                         onClick={toggleSelectAll}
