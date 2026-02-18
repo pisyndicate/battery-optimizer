@@ -310,7 +310,7 @@ const sortClients = (clients, strategy) => {
     }
 };
 
-export const allocateBatteries = (inputClients, inputLocations, exclusiveAffiliateNames = [], pinnedAllocations = [], toleranceMin = 0, toleranceMax = 0, strategy = 'default') => {
+export const allocateBatteries = (inputClients, inputLocations, exclusiveAffiliateNames = [], pinnedAllocations = [], toleranceMin = 0, toleranceMax = 0, strategy = 'default', startLocationId = null) => {
     const MAX_RETRIES = 10;
     let retryCount = 0;
     let capacityBoost = 0; // Progressively relax target on retries
@@ -445,6 +445,12 @@ export const allocateBatteries = (inputClients, inputLocations, exclusiveAffilia
             });
 
             possibleLocs.sort((a, b) => {
+                // Prioritize Start Location
+                if (startLocationId) {
+                    if (a.id === startLocationId && b.id !== startLocationId) return -1;
+                    if (b.id === startLocationId && a.id !== startLocationId) return 1;
+                }
+
                 const aAff = affinityLocIds.has(a.id) ? 1 : 0;
                 const bAff = affinityLocIds.has(b.id) ? 1 : 0;
                 if (aAff !== bAff) return bAff - aAff;
@@ -471,6 +477,12 @@ export const allocateBatteries = (inputClients, inputLocations, exclusiveAffilia
             if (!placed) {
                 // Prioritize affinity locations, then largest capacity
                 possibleLocs.sort((a, b) => {
+                    // Prioritize Start Location
+                    if (startLocationId) {
+                        if (a.id === startLocationId && b.id !== startLocationId) return -1;
+                        if (b.id === startLocationId && a.id !== startLocationId) return 1;
+                    }
+
                     const aAff = affinityLocIds.has(a.id) ? 1 : 0;
                     const bAff = affinityLocIds.has(b.id) ? 1 : 0;
                     if (aAff !== bAff) return bAff - aAff;
@@ -526,6 +538,12 @@ export const allocateBatteries = (inputClients, inputLocations, exclusiveAffilia
             // Sort: affinity first, then best fit (smallest sufficient)
             // Sort: best fit, or affinity if 'affiliate-grouping'
             possibleLocs.sort((a, b) => {
+                // Prioritize Start Location
+                if (startLocationId) {
+                    if (a.id === startLocationId && b.id !== startLocationId) return -1;
+                    if (b.id === startLocationId && a.id !== startLocationId) return 1;
+                }
+
                 // Only consider affinity if specifically grouping by affiliate
                 if (strategy === 'affiliate-grouping') {
                     const aAff = affinityLocIds.has(a.id) ? 1 : 0;
@@ -559,6 +577,12 @@ export const allocateBatteries = (inputClients, inputLocations, exclusiveAffilia
             // Must split across locations — fewest possible
             if (!placed) {
                 possibleLocs.sort((a, b) => {
+                    // Prioritize Start Location
+                    if (startLocationId) {
+                        if (a.id === startLocationId && b.id !== startLocationId) return -1;
+                        if (b.id === startLocationId && a.id !== startLocationId) return 1;
+                    }
+
                     if (strategy === 'affiliate-grouping') {
                         const aAff = affinityLocIds.has(a.id) ? 1 : 0;
                         const bAff = affinityLocIds.has(b.id) ? 1 : 0;
@@ -630,6 +654,12 @@ export const allocateBatteries = (inputClients, inputLocations, exclusiveAffilia
 
             // Strategy-based location sorting
             possibleLocs.sort((a, b) => {
+                // Prioritize Start Location
+                if (startLocationId) {
+                    if (a.id === startLocationId && b.id !== startLocationId) return -1;
+                    if (b.id === startLocationId && a.id !== startLocationId) return 1;
+                }
+
                 // Only prioritize affinity (where affiliate already is) for 'affiliate-grouping'
                 if (strategy === 'affiliate-grouping') {
                     const aHas = a.affiliatesHosted.has(client.affiliate) ? 1 : 0;

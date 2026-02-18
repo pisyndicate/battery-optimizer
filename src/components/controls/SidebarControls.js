@@ -176,7 +176,9 @@ const SidebarControls = ({
     onMasterReset,
     onClearCustomizations,
     distributionStrategy,
-    setDistributionStrategy
+    setDistributionStrategy,
+    startLocationId,
+    setStartLocationId
 }) => {
     const { showToast } = useToast();
 
@@ -285,6 +287,19 @@ const SidebarControls = ({
                             <option value="alpha">Alphabetical (A-Z)</option>
                             <option value="round-robin">Round Robin (Interleave)</option>
                             <option value="affiliate-grouping">Affiliate Grouping</option>
+                        </SidebarSelect>
+                    </div>
+
+                    <div style={{ marginBottom: '12px' }}>
+                        <div style={{ fontSize: '0.72rem', color: '#64748b', marginBottom: '4px' }}>Start Allocation From</div>
+                        <SidebarSelect
+                            value={startLocationId || ""}
+                            onChange={(e) => setStartLocationId(e.target.value || null)}
+                        >
+                            <option value="">-- No Preference --</option>
+                            {[...locations].sort((a, b) => a.name.localeCompare(b.name)).map(loc => (
+                                <option key={loc.id} value={loc.id}>{loc.name}</option>
+                            ))}
                         </SidebarSelect>
                     </div>
 

@@ -31,10 +31,14 @@ export default function Home() {
     const [targetUtilization, setTargetUtilization] = useState(100);
     const [isSidebarOpen, setIsSidebarOpen] = useState(true);
     const [distributionStrategy, setDistributionStrategy] = useState('default');
+    const [startLocationId, setStartLocationId] = useState(null);
 
     // Ref for auto-save state to avoid interval reset and hook errors
-    const stateRef = React.useRef({ customData, pinnedAllocations, exclusiveAffiliates, targetUtilization, useAdjustedCounts, distributionStrategy });
-    stateRef.current = { customData, pinnedAllocations, exclusiveAffiliates, targetUtilization, useAdjustedCounts, distributionStrategy };
+    const stateRef = React.useRef({ customData, pinnedAllocations, exclusiveAffiliates, targetUtilization, useAdjustedCounts, distributionStrategy, startLocationId });
+
+    useEffect(() => {
+        stateRef.current = { customData, pinnedAllocations, exclusiveAffiliates, targetUtilization, useAdjustedCounts, distributionStrategy, startLocationId };
+    });
 
     // Auto-save mechanism (every 5 minutes)
     useEffect(() => {
@@ -158,6 +162,7 @@ export default function Home() {
             setCustomData(null);
             setUseAdjustedCounts(false);
             setDistributionStrategy('default');
+            setStartLocationId(null);
             setGlobalSearch("");
             setRunId(prev => prev + 1);
             try {
@@ -178,15 +183,17 @@ export default function Home() {
             pinnedAllocations,
             effectiveTolerance,
             0,
-            distributionStrategy
+            distributionStrategy,
+            startLocationId
         );
-    }, [clients, locations, exclusiveAffiliates, pinnedAllocations, runId, targetUtilization, distributionStrategy]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [clients, locations, exclusiveAffiliates, pinnedAllocations, runId, targetUtilization, distributionStrategy, startLocationId]);
 
     // Persist transient state for Print Manifest
     useEffect(() => {
         const state = stateRef.current;
         localStorage.setItem('optimizer-transient-state', JSON.stringify(state));
-    }, [customData, pinnedAllocations, exclusiveAffiliates, targetUtilization, useAdjustedCounts]);
+    }, [customData, pinnedAllocations, exclusiveAffiliates, targetUtilization, useAdjustedCounts, startLocationId]);
 
     // Update a client's battery count
     const updateClientBatteries = (clientName, newBatteries) => {
@@ -357,6 +364,7 @@ export default function Home() {
                         setTargetUtilization(state.targetUtilization ?? 100);
                         setUseAdjustedCounts(state.useAdjustedCounts ?? false);
                         setDistributionStrategy(state.distributionStrategy || 'default');
+                        setStartLocationId(state.startLocationId || null);
                         setRunId(prev => prev + 1);
                         showToast('Project loaded', 'success');
                     }}
@@ -367,6 +375,7 @@ export default function Home() {
                         setCustomData(null);
                         setUseAdjustedCounts(false);
                         setDistributionStrategy('default');
+                        setStartLocationId(null);
                         setGlobalSearch('');
                         setRunId(prev => prev + 1);
                         showToast('Started new project', 'info');
@@ -387,6 +396,8 @@ export default function Home() {
                     }}
                     distributionStrategy={distributionStrategy}
                     setDistributionStrategy={setDistributionStrategy}
+                    startLocationId={startLocationId}
+                    setStartLocationId={setStartLocationId}
                 />
             }
             headerContent={headerContent}
@@ -578,7 +589,7 @@ export default function Home() {
                             }}>
                                 {filteredLocations.length === 0 && (
                                     <div style={{ gridColumn: '1/-1', textAlign: 'center', padding: '40px', color: '#64748b' }}>
-                                        No locations found matching "{globalSearch}"
+                                        No locations found matching &quot;{globalSearch}&quot;
                                     </div>
                                 )}
                                 {filteredLocations.map(loc => (
